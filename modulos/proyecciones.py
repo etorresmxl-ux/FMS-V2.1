@@ -2,18 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 import database as db
-from servicios import calculos
-
-def formatear_fecha_corta(fecha):
-    """Devuelve la fecha en el formato pedido: 'ddd dd-mmm' (p. ej. 'lun 28-oct')."""
-    dias_semana = {0: "lun", 1: "mar", 2: "mié", 3: "jue", 4: "vie", 5: "sáb", 6: "dom"}
-    meses = { 
-        1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun", 
-        7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic" 
-    }
-    dia_str = dias_semana[fecha.weekday()]
-    mes_str = meses[fecha.month]
-    return f"{dia_str} {fecha.day:02d}-{mes_str}"
+import calculos
 
 def normalizar_dia_semana(valor_dia):
     """Mapea nombres largos, con acentos o capitalizados a un índice entero (0 = Lunes, 6 = Domingo)."""
@@ -31,9 +20,12 @@ def normalizar_dia_semana(valor_dia):
     }
     return mapa.get(val, None)
 
+def formatear_fecha_corta(f):
+    return f.strftime("%d/%m")
+
 def mostrar_proyecciones():
     st.header("📈 Proyección e Integridad de Inventarios (14 Días)")
-    
+
     datos_estaciones = db.obtener_estaciones()
     if not datos_estaciones:
         st.warning("No hay estaciones registradas en la base de datos.")
@@ -67,7 +59,7 @@ def mostrar_proyecciones():
 
     df_factores = calculos.obtener_factores_estacionalidad_dia()
     df_ponderados = calculos.obtener_calculos_combustible()
-    
+
     if not df_factores.empty and "dia_de_la_semana" in df_factores.columns:
         df_factores["dia_index"] = df_factores["dia_de_la_semana"].apply(normalizar_dia_semana)
         df_factores["id_estacion"] = df_factores["id_estacion"].astype(str).str.strip()
@@ -78,7 +70,7 @@ def mostrar_proyecciones():
         df_ponderados["producto"] = df_ponderados["producto"].astype(str).str.strip().str.capitalize()
 
     df_inv_hoy = db.obtener_inventarios()
-    
+
     if df_inv_hoy:
         df_inv_hoy = pd.DataFrame(df_inv_hoy)
         if "fecha" in df_inv_hoy.columns:
@@ -165,7 +157,8 @@ def mostrar_proyecciones():
                                 if "dia_index" in df_factores.columns:
                                     match_v = df_factores[mask_f & (df_factores["dia_index"] == current_date.weekday())]
                                     if not match_v.empty:
-                                        for col_val in ["volumen", "venta_proyectada_dia", "vdp_ponderada"]:
+                                        # Corrección: Se incluyen de forma ordenada las columnas reales de estacionalidad y venta diaria
+                                        for col_val in ["venta_proyectada_dia", "vp_dia", "volumen", "vdp_ponderada"]:
                                             if col_val in match_v.columns and pd.notna(match_v[col_val].values[0]):
                                                 val = float(match_v[col_val].values[0])
                                                 if val > 0:
@@ -210,7 +203,8 @@ def mostrar_proyecciones():
                 if "dia_index" in df_factores.columns:
                     match_venta = df_factores[mask & (df_factores["dia_index"] == fecha_dia.weekday())]
                     if not match_venta.empty:
-                        for col_val in ["volumen", "venta_proyectada_dia", "vdp_ponderada"]:
+                        # Corrección clave: Priorizar 'venta_proyectada_dia' y 'vp_dia' generadas en cálculos/vistas
+                        for col_val in ["venta_proyectada_dia", "vp_dia", "volumen", "vdp_ponderada"]:
                             if col_val in match_venta.columns and pd.notna(match_venta[col_val].values[0]):
                                 val = float(match_venta[col_val].values[0])
                                 if val > 0:
