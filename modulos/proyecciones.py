@@ -69,6 +69,8 @@ def mostrar_proyecciones():
     
     if not df_factores.empty and "dia_de_la_semana" in df_factores.columns:
         df_factores["dia_index"] = df_factores["dia_de_la_semana"].apply(normalizar_dia_semana)
+        df_factores["id_estacion"] = df_factores["id_estacion"].astype(str).str.strip()
+        df_factores["producto"] = df_factores["producto"].astype(str).str.strip().str.capitalize()
 
     df_inv_hoy = db.obtener_inventarios()
     
@@ -77,11 +79,13 @@ def mostrar_proyecciones():
         if "fecha" in df_inv_hoy.columns:
             df_inv_hoy["fecha"] = pd.to_datetime(df_inv_hoy["fecha"]).dt.date
         if "producto" in df_inv_hoy.columns:
-            df_inv_hoy["producto"] = df_inv_hoy["producto"].astype(str).str.capitalize()
+            df_inv_hoy["producto"] = df_inv_hoy["producto"].astype(str).str.strip().str.capitalize()
+        if "id_estacion" in df_inv_hoy.columns:
+            df_inv_hoy["id_estacion"] = df_inv_hoy["id_estacion"].astype(str).str.strip()
     else:
         df_inv_hoy = pd.DataFrame()
 
-    # Obtener tanques y límites mínimos configurados por estación desde Supabase[cite: 8]
+    # Obtener tanques y límites mínimos configurados por estación desde Supabase[cite: 5]
     datos_tanques = db.obtener_tanques_estaciones()
     if datos_tanques:
         df_tanques = pd.DataFrame(datos_tanques)
@@ -105,7 +109,7 @@ def mostrar_proyecciones():
 
         st.markdown(f"<h3 style='color: {color_Hex};'>⛽ {producto}</h3>", unsafe_allow_html=True)
 
-        # Extraer el limite_min específico para esta estación y producto con normalización estricta[cite: 8]
+        # Extraer el limite_min específico para esta estación y producto
         limite_min_val = 0.0
         if not df_tanques.empty and "id_estacion" in df_tanques.columns and "producto" in df_tanques.columns and "limite_min" in df_tanques.columns:
             match_tanque = df_tanques[
@@ -119,8 +123,8 @@ def mostrar_proyecciones():
         inv_inicial_hoy = 0.0
         if not df_inv_hoy.empty and "id_estacion" in df_inv_hoy.columns and "producto" in df_inv_hoy.columns:
             df_inv_est_prod = df_inv_hoy[
-                (df_inv_hoy["id_estacion"].astype(str).str.strip() == str(id_estacion_sel).strip()) &
-                (df_inv_hoy["producto"].astype(str).str.strip().str.capitalize() == producto)
+                (df_inv_hoy["id_estacion"] == str(id_estacion_sel).strip()) &
+                (df_inv_hoy["producto"] == producto)
             ].copy()
             
             if not df_inv_est_prod.empty:
@@ -141,16 +145,18 @@ def mostrar_proyecciones():
                             venta_dia_intermedio = 0.0
                             if not df_factores.empty:
                                 mask_f = (
-                                    (df_factores["id_estacion"].astype(str).str.strip() == str(id_estacion_sel).strip()) &
-                                    (df_factores["producto"].astype(str).str.strip().str.capitalize() == producto)
+                                    (df_factores["id_estacion"] == str(id_estacion_sel).strip()) &
+                                    (df_factores["producto"] == producto)
                                 )
                                 if "dia_index" in df_factores.columns:
                                     match_v = df_factores[mask_f & (df_factores["dia_index"] == current_date.weekday())]
                                     if not match_v.empty:
-                                        if "venta_proyectada_dia" in match_v.columns and pd.notna(match_v["venta_proyectada_dia"].values[0]):
-                                            venta_dia_intermedio = float(match_v["venta_proyectada_dia"].values[0])
-                                        elif "vdp_ponderada" in match_v.columns and pd.notna(match_v["vdp_ponderada"].values[0]):
-                                            venta_dia_intermedio = float(match_v["vdp_ponderada"].values[0])
+                                        for col_val in ["venta_proyectada_dia", "vdp_ponderada", "vp_dia"]:
+                                            if col_val in match_v.columns and pd.notna(match_v[col_val].values[0]):
+                                                val = float(match_v[col_val].values[0])
+                                                if val > 0:
+                                                    venta_dia_intermedio = val
+                                                    break
                             
                             # Truncar venta intermedia si alcanza el límite mínimo
                             if inv_actual_proyectado - venta_dia_intermedio < limite_min_val:
@@ -178,20 +184,19 @@ def mostrar_proyecciones():
             venta_estimada_dia = 0.0
             if not df_factores.empty:
                 mask = (
-                    (df_factores["id_estacion"].astype(str).str.strip() == str(id_estacion_sel).strip()) &
-                    (df_factores["producto"].astype(str).str.strip().str.capitalize() == producto)
+                    (df_factores["id_estacion"] == str(id_estacion_sel).strip()) &
+                    (df_factores["producto"] == producto)
                 )
 
                 if "dia_index" in df_factores.columns:
                     match_venta = df_factores[mask & (df_factores["dia_index"] == fecha_dia.weekday())]
-                    if not match_venta.empty and "venta_proyectada_dia" in match_venta.columns:
-                        val = match_venta["venta_proyectada_dia"].values[0]
-                        if pd.notna(val):
-                            venta_estimada_dia = float(val)
-                    elif not match_venta.empty and "vdp_ponderada" in match_venta.columns:
-                        val = match_venta["vdp_ponderada"].values[0]
-                        if pd.notna(val):
-                            venta_estimada_dia = float(val)
+                    if not match_venta.empty:
+                        for col_val in ["venta_proyectada_dia", "vdp_ponderada", "vp_dia"]:
+                            if col_val in match_venta.columns and pd.notna(match_venta[col_val].values[0]):
+                                val = float(match_venta[col_val].values[0])
+                                if val > 0:
+                                    venta_estimada_dia = val
+                                    break
 
             inv_inicial = inv_actual
             inv_final_prov = inv_inicial - venta_estimada_dia
