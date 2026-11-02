@@ -5,7 +5,7 @@ import database as db
 from servicios import calculos
 
 def formatear_fecha_corta(fecha):
-    """ Devuelve la fecha en el formato pedido: 'ddd dd-mmm' (p. ej. 'lun 28-oct'). """
+    """Devuelve la fecha en el formato pedido: 'ddd dd-mmm' (p. ej. 'lun 28-oct')."""
     dias_semana = {0: "lun", 1: "mar", 2: "mié", 3: "jue", 4: "vie", 5: "sáb", 6: "dom"}
     meses = { 
         1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun", 
@@ -16,7 +16,7 @@ def formatear_fecha_corta(fecha):
     return f"{dia_str} {fecha.day:02d}-{mes_str}"
 
 def normalizar_dia_semana(valor_dia):
-    """ Mapea nombres largos, con acentos o capitalizados a un índice entero (0 = Lunes, 6 = Domingo). """
+    """Mapea nombres largos, con acentos o capitalizados a un índice entero (0 = Lunes, 6 = Domingo)."""
     if not isinstance(valor_dia, str):
         return None
     val = valor_dia.strip().lower()
@@ -85,7 +85,6 @@ def mostrar_proyecciones():
     else:
         df_inv_hoy = pd.DataFrame()
 
-    # Obtener tanques y límites mínimos configurados por estación desde Supabase[cite: 5]
     datos_tanques = db.obtener_tanques_estaciones()
     if datos_tanques:
         df_tanques = pd.DataFrame(datos_tanques)
@@ -109,7 +108,6 @@ def mostrar_proyecciones():
 
         st.markdown(f"<h3 style='color: {color_Hex};'>⛽ {producto}</h3>", unsafe_allow_html=True)
 
-        # Extraer el limite_min específico para esta estación y producto
         limite_min_val = 0.0
         if not df_tanques.empty and "id_estacion" in df_tanques.columns and "producto" in df_tanques.columns and "limite_min" in df_tanques.columns:
             match_tanque = df_tanques[
@@ -151,14 +149,13 @@ def mostrar_proyecciones():
                                 if "dia_index" in df_factores.columns:
                                     match_v = df_factores[mask_f & (df_factores["dia_index"] == current_date.weekday())]
                                     if not match_v.empty:
-                                        for col_val in ["venta_proyectada_dia", "vdp_ponderada", "vp_dia"]:
+                                        for col_val in ["venta_proyectada_dia", "vdp_ponderada", "vp_dia", "volumen"]:
                                             if col_val in match_v.columns and pd.notna(match_v[col_val].values[0]):
                                                 val = float(match_v[col_val].values[0])
                                                 if val > 0:
                                                     venta_dia_intermedio = val
                                                     break
                             
-                            # Truncar venta intermedia si alcanza el límite mínimo
                             if inv_actual_proyectado - venta_dia_intermedio < limite_min_val:
                                 venta_dia_intermedio = max(0.0, inv_actual_proyectado - limite_min_val)
 
@@ -184,14 +181,14 @@ def mostrar_proyecciones():
             venta_estimada_dia = 0.0
             if not df_factores.empty:
                 mask = (
-                    (df_factores["id_estacion"] == str(id_estacion_sel).strip()) &
+                    (df_factores["id_estacion"].astype(str).str.strip() == str(id_estacion_sel).strip()) &
                     (df_factores["producto"] == producto)
                 )
 
                 if "dia_index" in df_factores.columns:
                     match_venta = df_factores[mask & (df_factores["dia_index"] == fecha_dia.weekday())]
                     if not match_venta.empty:
-                        for col_val in ["venta_proyectada_dia", "vdp_ponderada", "vp_dia"]:
+                        for col_val in ["venta_proyectada_dia", "vdp_ponderada", "vp_dia", "volumen"]:
                             if col_val in match_venta.columns and pd.notna(match_venta[col_val].values[0]):
                                 val = float(match_venta[col_val].values[0])
                                 if val > 0:
@@ -199,14 +196,17 @@ def mostrar_proyecciones():
                                     break
 
             inv_inicial = inv_actual
-            inv_final_prov = inv_inicial - venta_estimada_dia
-
-            # REGLA: Truncar la venta si el inventario final provisional desciende por debajo del límite mínimo
-            if inv_final_prov < limite_min_val:
-                inv_final = limite_min_val
-                venta_estimada_dia = max(0.0, inv_inicial - limite_min_val)
+            
+            if inv_inicial <= limite_min_val:
+                venta_estimada_dia = 0.0
+                inv_final = inv_inicial
             else:
-                inv_final = inv_final_prov
+                inv_final_prov = inv_inicial - venta_estimada_dia
+                if inv_final_prov < limite_min_val:
+                    venta_estimada_dia = max(0.0, inv_inicial - limite_min_val)
+                    inv_final = limite_min_val
+                else:
+                    inv_final = inv_final_prov
 
             ds = (inv_final / venta_estimada_dia) if venta_estimada_dia > 0 else 0.0
 
