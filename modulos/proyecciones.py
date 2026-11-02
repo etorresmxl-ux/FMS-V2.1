@@ -4,6 +4,33 @@ from datetime import date, timedelta
 import database as db
 from servicios import calculos
 
+def formatear_fecha_corta(fecha):
+    """ Devuelve la fecha en el formato pedido: 'ddd dd-mmm' (p. ej. 'lun 28-oct'). """
+    dias_semana = {0: "lun", 1: "mar", 2: "mié", 3: "jue", 4: "vie", 5: "sáb", 6: "dom"}
+    meses = { 
+        1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun", 
+        7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic" 
+    }
+    dia_str = dias_semana[fecha.weekday()]
+    mes_str = meses[fecha.month]
+    return f"{dia_str} {fecha.day:02d}-{mes_str}"
+
+def normalizar_dia_semana(valor_dia):
+    """ Mapea nombres largos, con acentos o capitalizados a un índice entero (0 = Lunes, 6 = Domingo). """
+    if not isinstance(valor_dia, str):
+        return None
+    val = valor_dia.strip().lower()
+    mapa = {
+        'lunes': 0, 'lun': 0,
+        'martes': 1, 'mar': 1,
+        'miércoles': 2, 'miercoles': 2, 'mié': 2, 'mie': 2,
+        'jueves': 3, 'jue': 3,
+        'viernes': 4, 'vie': 4,
+        'sábado': 5, 'sabado': 5, 'sáb': 5, 'sab': 5,
+        'domingo': 6, 'dom': 6
+    }
+    return mapa.get(val, None)
+
 def mostrar_proyecciones():
     st.header("📈 Proyección e Integridad de Inventarios (14 Días)")
     
@@ -119,7 +146,7 @@ def mostrar_proyecciones():
 
         for i in range(14):
             fecha_dia = fecha_hoy + timedelta(days=i)
-            fecha_fmt = fecha_dia.strftime("%d/%m/%Y") # o función de formato corta existente
+            fecha_fmt = formatear_fecha_corta(fecha_dia)
             fechas_cols.append(fecha_fmt)
 
             venta_estimada_dia = 0.0
@@ -151,7 +178,6 @@ def mostrar_proyecciones():
 
             inv_actual = inv_final
 
-        # Construcción del DataFrame para mostrar en Streamlit
         data_dict = {
             "Concepto": ["Inventario Inicial", "Venta Estimada", "Inventario Final", "D/S"]
         }
