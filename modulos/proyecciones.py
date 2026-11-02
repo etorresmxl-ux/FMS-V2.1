@@ -7,24 +7,9 @@ from servicios import calculos
 def formatear_fecha_corta(f): 
     return f.strftime("%d/%m")
 
-def normalizar_dia_semana(dia_texto):
-    """Mapea el texto del día de la semana a un índice numérico (0=Lunes a 6=Domingo)."""
-    if not isinstance(dia_texto, str):
-        return 0
-    dias = {
-        "lunes": 0, "monday": 0,
-        "martes": 1, "tuesday": 1,
-        "miércoles": 2, "miercoles": 2, "wednesday": 2,
-        "jueves": 3, "thursday": 3,
-        "viernes": 4, "friday": 4,
-        "sábado": 5, "sabado": 5, "saturday": 5,
-        "domingo": 6, "sunday": 6
-    }
-    return dias.get(dia_texto.strip().lower(), 0)
-
 def mostrar_proyecciones(): 
     st.header("📈 Proyección e Integridad de Inventarios (14 Días)")
-    
+
     datos_estaciones = db.obtener_estaciones()
     if not datos_estaciones:
         st.warning("No hay estaciones registradas en la base de datos.")
@@ -60,7 +45,7 @@ def mostrar_proyecciones():
     df_ponderados = calculos.obtener_calculos_combustible()
 
     if not df_factores.empty and "dia_de_la_semana" in df_factores.columns:
-        df_factores["dia_index"] = df_factores["dia_de_la_semana"].apply(normalizar_dia_semana)
+        df_factores["dia_index"] = pd.to_numeric(df_factores["dia_de_la_semana"], errors="coerce")
         df_factores["id_estacion"] = df_factores["id_estacion"].astype(str).str.strip()
         df_factores["producto"] = df_factores["producto"].astype(str).str.strip().str.capitalize()
 
@@ -154,12 +139,15 @@ def mostrar_proyecciones():
                                     (df_factores["producto"] == producto)
                                 )
                                 if "dia_index" in df_factores.columns:
-                                    match_v = df_factores[mask_f & (df_factores["dia_index"] == current_date.weekday())]
-                                    if not match_v.empty and "venta_proyectada_dia" in match_v.columns:
-                                        val = float(match_v["venta_proyectada_dia"].values[0])
-                                        if val > 0:
-                                            venta_dia_intermedio = val
-                                            encontro_venta = True
+                                    match_v = df_factores[mask_f & (df_factores["dia_index"] == current_date.isoweekday())]
+                                    if not match_v.empty:
+                                        for col_val in ["venta_proyectada_dia", "vp_dia", "volumen", "vdp_ponderada"]:
+                                            if col_val in match_v.columns and pd.notna(match_v[col_val].values[0]):
+                                                val = float(match_v[col_val].values[0])
+                                                if val > 0:
+                                                    venta_dia_intermedio = val
+                                                    encontro_venta = True
+                                                    break
                             
                             if not encontro_venta and vdp_base > 0:
                                 venta_dia_intermedio = vdp_base
@@ -196,12 +184,15 @@ def mostrar_proyecciones():
                 )
 
                 if "dia_index" in df_factores.columns:
-                    match_venta = df_factores[mask & (df_factores["dia_index"] == fecha_dia.weekday())]
-                    if not match_venta.empty and "venta_proyectada_dia" in match_venta.columns:
-                        val = float(match_venta["venta_proyectada_dia"].values[0])
-                        if val > 0:
-                            venta_estimada_dia = val
-                            encontro_venta = True
+                    match_venta = df_factores[mask & (df_factores["dia_index"] == fecha_dia.isoweekday())]
+                    if not match_venta.empty:
+                        for col_val in ["venta_proyectada_dia", "vp_dia", "volumen", "vdp_ponderada"]:
+                            if col_val in match_venta.columns and pd.notna(match_venta[col_val].values[0]):
+                                val = float(match_venta[col_val].values[0])
+                                if val > 0:
+                                    venta_estimada_dia = val
+                                    encontro_venta = True
+                                    break
 
             if not encontro_venta and vdp_base > 0:
                 venta_estimada_dia = vdp_base
