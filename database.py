@@ -118,6 +118,31 @@ def insertar_inventario(id_estacion, fecha, producto, volumen):
     return _require_supabase().table("inventarios").insert(data).execute()
 
 
+def guardar_inventarios_por_fecha(registros):
+    """Inserta o actualiza inventarios a partir de una lista de dicts con id_estacion, fecha, producto, volumen."""
+    if not registros:
+        return {"data": []}
+
+    payload = []
+    for registro in registros:
+        if not registro:
+            continue
+        payload.append({
+            "id_estacion": registro["id_estacion"],
+            "fecha": str(registro["fecha"]),
+            "producto": _normalizar_producto(registro["producto"]),
+            "volumen": _limpiar_flotante(registro["volumen"])
+        })
+
+    if not payload:
+        return {"data": []}
+
+    return _require_supabase().table("inventarios").upsert(
+        payload,
+        on_conflict="id_estacion,fecha,producto"
+    ).execute()
+
+
 # =========================================================
 # --- FUNCIONES DE VENTAS ---
 # =========================================================
