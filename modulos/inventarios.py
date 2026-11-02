@@ -4,6 +4,7 @@ from datetime import date
 import database as db
 from servicios import validacion
 
+
 def mostrar_inventarios():
     st.header("📋 Consulta y Actualización de Inventarios")
 
@@ -86,12 +87,10 @@ def mostrar_inventarios():
 
     df_resultado = validacion.validar_matriz_productos(df_estaciones_filtradas, df_resultado, productos)
 
-    # Corrección: Se utiliza errors="coerce" para transformar valores inválidos en NaN y .fillna(0) para rellenarlos
     for prod in productos:
         if prod in df_resultado.columns:
             df_resultado[prod] = pd.to_numeric(df_resultado[prod], errors="coerce").fillna(0)
 
-    # Configuración de columnas permitiendo edición numérica en regular, premium y diesel
     column_config = {
         "id_estacion": st.column_config.TextColumn("ID", width="small", disabled=True),
         "nombre": st.column_config.TextColumn("Estación", width="medium", disabled=True),
@@ -101,7 +100,6 @@ def mostrar_inventarios():
         "Diesel": st.column_config.NumberColumn("Diesel", width="small", min_value=0, step=1, format="%d")
     }
 
-    # Usamos st.data_editor para habilitar la escritura en la tabla
     df_editado = st.data_editor(
         df_resultado,
         width='stretch',
@@ -111,8 +109,27 @@ def mostrar_inventarios():
         key="editor_inventarios"
     )
 
-    # Botón de guardado ubicado en la parte inferior después de la tabla
     st.write("")
     if st.button("Guardar Cambios de Inventario", type="primary", use_container_width=True):
-        # Aquí puedes procesar 'df_editado' para guardar los valores actualizados en la base de datos
-        st.success("¡Cambios guardados exitosamente!")
+        try:
+            registros = []
+            for _, row in df_editado.iterrows():
+                for producto in productos:
+                    volumen = pd.to_numeric(row.get(producto, 0), errors="coerce")
+                    if pd.notna(volumen):
+                        registros.append({
+                            "id_estacion": row["id_estacion"],
+                            "fecha": fecha_seleccionada,
+                            "producto": producto,
+                            "volumen": float(volumen)
+                        })
+
+            if registros:
+                db.guardar_inventarios_por_fecha(registros)
+                st.success("¡Cambios guardados exitosamente!")
+                st.rerun()
+            else:
+                st.info("No hay valores para guardar.")
+
+        except Exception as e:
+            st.error(f"No se pudieron guardar los inventarios: {e}")
