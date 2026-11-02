@@ -111,8 +111,30 @@ def mostrar_inventarios():
         key="editor_inventarios"
     )
 
-    # Botón de guardado ubicado en la parte inferior después de la tabla
+    # Botón de guardado ubicado en la parte inferior después de la tabla con integración a Supabase
     st.write("")
     if st.button("Guardar Cambios de Inventario", type="primary", use_container_width=True):
-        # Aquí puedes procesar 'df_editado' para guardar los valores actualizados en la base de datos
-        st.success("¡Cambios guardados exitosamente!")
+        try:
+            exitos = 0
+            
+            # Iterar sobre cada fila del DataFrame editado para registrar los cambios en Supabase
+            for _, row in df_editado.iterrows():
+                id_estacion = row["id_estacion"]
+                
+                for prod in productos:
+                    if prod in row:
+                        volumen_val = row[prod]
+                        
+                        # Llamada a la función de inserción en la base de datos
+                        db.insertar_inventario(
+                            id_estacion=id_estacion,
+                            fecha=fecha_seleccionada,
+                            producto=prod,
+                            volumen=volumen_val
+                        )
+                        exitos += 1
+                        
+            st.success(f"¡Inventarios guardados y registrados en Supabase exitosamente!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Ocurrió un error al guardar los inventarios en la base de datos: {e}")
