@@ -66,6 +66,11 @@ def mostrar_proyecciones():
         return
 
     df_factores = calculos.obtener_factores_estacionalidad_dia()
+    
+    # CORRECCIÓN: Generar 'dia_index' a partir de 'dia_de_la_semana' para que coincida con el weekday de la fecha
+    if not df_factores.empty and "dia_de_la_semana" in df_factores.columns:
+        df_factores["dia_index"] = df_factores["dia_de_la_semana"].apply(normalizar_dia_semana)
+
     df_inv_hoy = db.obtener_inventarios()
     
     if df_inv_hoy:
@@ -99,19 +104,16 @@ def mostrar_proyecciones():
             ].copy()
             
             if not df_inv_est_prod.empty:
-                # 1. Verificar si hay inventario exacto para hoy
                 match_hoy = df_inv_est_prod[df_inv_est_prod["fecha"] == fecha_hoy]
                 if not match_hoy.empty:
                     inv_inicial_hoy = float(match_hoy["volumen"].values[0])
                 else:
-                    # 2. Si no hay para hoy, buscar el último inventario registrado anterior a hoy
                     df_anteriores = df_inv_est_prod[df_inv_est_prod["fecha"] < fecha_hoy]
                     if not df_anteriores.empty:
                         df_anteriores = df_anteriores.sort_values(by="fecha", ascending=False)
                         ultima_fecha = df_anteriores["fecha"].values[0]
                         volumen_ultimo = float(df_anteriores["volumen"].values[0])
                         
-                        # Proyectar el inventario desde la última fecha registrada hasta el día anterior a hoy
                         inv_actual_proyectado = volumen_ultimo
                         current_date = ultima_fecha
                         
@@ -167,7 +169,6 @@ def mostrar_proyecciones():
                         if pd.notna(val):
                             venta_estimada_dia = float(val)
 
-            # El inventario inicial del día actual es el inventario final del día anterior
             inv_inicial = inv_actual
             inv_final = inv_inicial - venta_estimada_dia
             ds = (inv_final / venta_estimada_dia) if venta_estimada_dia > 0 else 0.0
@@ -177,7 +178,6 @@ def mostrar_proyecciones():
             inv_finales.append(round(inv_final, 2))
             dias_inventario.append(round(ds, 1))
 
-            # Actualizamos inv_actual para que en la siguiente iteración tome el inventario final calculado
             inv_actual = inv_final
 
         data_dict = {
