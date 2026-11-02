@@ -119,28 +119,60 @@ def insertar_inventario(id_estacion, fecha, producto, volumen):
 
 
 def guardar_inventarios_por_fecha(registros):
-    """Inserta o actualiza inventarios a partir de una lista de dicts con id_estacion, fecha, producto, volumen."""
+    """Actualiza o inserta inventarios sin depender de un UNIQUE/UPSERT del esquema."""
     if not registros:
         return {"data": []}
 
-    payload = []
+    supabase = _require_supabase()
+    resultados = []
+    vistos = set()
+
     for registro in registros:
         if not registro:
             continue
-        payload.append({
-            "id_estacion": registro["id_estacion"],
-            "fecha": str(registro["fecha"]),
-            "producto": _normalizar_producto(registro["producto"]),
-            "volumen": _limpiar_flotante(registro["volumen"])
-        })
 
-    if not payload:
-        return {"data": []}
+        id_estacion = registro["id_estacion"]
+        fecha_str = str(registro["fecha"])
+        producto = _normalizar_producto(registro["producto"])
+        volumen = _limpiar_flotante(registro["volumen"])
+        clave = (str(id_estacion), fecha_str, producto)
 
-    return _require_supabase().table("inventarios").upsert(
-        payload,
-        on_conflict="id_estacion,fecha,producto"
-    ).execute()
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+
+        existente = (
+            supabase.table("inventarios")
+            .select("*")
+            .eq("id_estacion", id_estacion)
+            .eq("fecha", fecha_str)
+            .eq("producto", producto)
+            .limit(1)
+            .execute()
+        )
+
+        payload = {
+            "id_estacion": id_estacion,
+            "fecha": fecha_str,
+            "producto": producto,
+            "volumen": volumen,
+        }
+
+        if existente.data:
+            respuesta = (
+                supabase.table("inventarios")
+                .update({"volumen": volumen})
+                .eq("id_estacion", id_estacion)
+                .eq("fecha", fecha_str)
+                .eq("producto", producto)
+                .execute()
+            )
+        else:
+            respuesta = supabase.table("inventarios").insert(payload).execute()
+
+        resultados.append(respuesta)
+
+    return {"data": resultados}
 
 
 # =========================================================
