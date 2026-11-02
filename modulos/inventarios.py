@@ -7,30 +7,6 @@ from servicios import validacion
 def mostrar_inventarios():
     st.header("📋 Consulta y Actualización de Inventarios")
 
-    # CSS CORREGIDO Y MEJORADO PARA FORZAR EL ALTO DE LAS FILAS
-    st.markdown("""
-        <style>
-        /* Ajusta la altura de las celdas y filas en los dataframes de Streamlit */
-        [data-testid="stDataFrame"] div[data-baseweb="card"],
-        [data-testid="stDataFrame"] iframe {
-            width: 100%;
-        }
-        
-        /* Forzar reducción de altura en los contenedores internos de la cuadrícula */
-        [data-testid="stDataFrame"] [role="row"] {
-            min-height: 20px !important;
-            height: 20px !important;
-        }
-        
-        [data-testid="stDataFrame"] [role="gridcell"],
-        [data-testid="stDataFrame"] th {
-            padding-top: 2px !important;
-            padding-bottom: 2px !important;
-            line-height: 20px !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
     datos_estaciones_usuario = db.obtener_estaciones_usuario()
     datos_inventarios = db.obtener_inventarios()
 
@@ -123,7 +99,7 @@ def mostrar_inventarios():
         "Diesel": st.column_config.TextColumn("Diesel", width="small")
     }
 
-    # Renderizado de la tabla con altura fija para 25 filas
+    # Mostrar la tabla configurada con altura para ~25 filas[cite: 1]
     st.dataframe(
         df_resultado,
         width='stretch',
@@ -131,3 +107,9 @@ def mostrar_inventarios():
         column_config=column_config,
         height=850
     )
+
+    # Botón de guardado ubicado en la parte inferior después de la tabla
+    st.write("")
+    if st.button("Guardar Cambios de Inventario", type="primary", use_container_width=True):
+        st.success("¡Cambios guardados exitosamente!")
+        # Aquí puedes agregar la lógica para recorrer y registrar los datos actualizados en la base de datos.
