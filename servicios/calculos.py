@@ -5,26 +5,29 @@ import database as db
 @st.cache_data
 def obtener_calculos_combustible():
     """
-    Servicio centralizado que obtiene la venta semanal de las últimas 12 semanas, 
-    calcula la VSP ponderada y la VDP ponderada por estación y producto.
+    Obtiene la venta semanal ponderada desde la vista de Supabase,
+    aplicando normalización estricta de texto al inicio.
     """
-    data = db.obtener_venta_semanal_promedio_12w()
-    df = pd.DataFrame(data)
+    try:
+        data = db.obtener_venta_semanal_promedio_12w()
+        df = pd.DataFrame(data)
+    except Exception:
+        df = pd.DataFrame()
 
     if df.empty:
         return pd.DataFrame()
 
-    # Normalizar identificadores y productos
+    # 1. Normalización estricta e inmediata de claves y productos
     df["id_estacion"] = df["id_estacion"].astype(str).str.strip()
     df["producto"] = df["producto"].astype(str).str.strip().str.capitalize()
 
-    # 1. Ordenar de la semana más reciente a la más antigua por estación y producto
+    # 2. Ordenar de la semana más reciente a la más antigua
     df = df.sort_values(by=['id_estacion', 'producto', 'semana'], ascending=[True, True, False])
 
-    # 2. Ranking de recencia (1 = la más reciente)
+    # 3. Ranking de recencia (1 = la más reciente)
     df['ranking_semana'] = df.groupby(['id_estacion', 'producto']).cumcount() + 1
 
-    # 3. Ponderaciones: 50% (sem 1-2), 30% (sem 3-8), 20% (sem 9-12)
+    # 4. Ponderaciones: 50% (sem 1-2), 30% (sem 3-8), 20% (sem 9-12)
     def asignar_peso(row):
         r = row['ranking_semana']
         if r in [1, 2]:
@@ -37,7 +40,7 @@ def obtener_calculos_combustible():
 
     df['peso'] = df.apply(asignar_peso, axis=1)
 
-    # 4. Cálculo VSP y VDP Ponderada
+    # 5. Cálculo VSP y VDP Ponderada
     df['volumen_ponderado'] = df['volumen'] * df['peso']
 
     df_resultado = df.groupby(['id_estacion', 'producto']).agg(
@@ -51,22 +54,25 @@ def obtener_calculos_combustible():
 @st.cache_data
 def obtener_vdp_diario_12w():
     """ 
-    Obtiene el promedio por día de la semana (Lunes, Martes, etc.) de las últimas 12 semanas desde Supabase[cite: 3]. 
+    Obtiene el promedio por día de la semana desde la vista de Supabase con normalización. 
     """
-    data = db.obtener_venta_promedio_dia_semana_12w()
-    df = pd.DataFrame(data)
-    
+    try:
+        data = db.obtener_venta_promedio_dia_semana_12w()
+        df = pd.DataFrame(data)
+    except Exception:
+        df = pd.DataFrame()
+
     if not df.empty:
         df["id_estacion"] = df["id_estacion"].astype(str).str.strip()
         df["producto"] = df["producto"].astype(str).str.strip().str.capitalize()
-        
+
     return df
 
 @st.cache_data
 def obtener_factores_estacionalidad_dia():
     """
     Cruza la VDP Ponderada con la Venta Promedio por Día de la Semana para calcular 
-    la venta proyectada específica por día sin redundancias.
+    la venta proyectada específica por día de manera limpia.
     """
     df_ponderados = obtener_calculos_combustible()
     df_diarios = obtener_vdp_diario_12w()
@@ -77,7 +83,7 @@ def obtener_factores_estacionalidad_dia():
     if 'volumen' in df_diarios.columns:
         df_diarios = df_diarios.rename(columns={'volumen': 'vp_dia'})
 
-    # Cruzar datos por estación y producto con claves limpias
+    # Cruce seguro con claves normalizadas
     df_factor = pd.merge(
         df_diarios,
         df_ponderados[['id_estacion', 'producto', 'vdp_ponderada']],
@@ -88,7 +94,6 @@ def obtener_factores_estacionalidad_dia():
     if df_factor.empty:
         return pd.DataFrame()
 
-    # Cálculo del factor y asignación directa de la venta del día
     df_factor['factor_dia'] = df_factor.apply(
         lambda row: row['vp_dia'] / row['vdp_ponderada'] if row['vdp_ponderada'] > 0 else 1.0, 
         axis=1
