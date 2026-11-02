@@ -67,7 +67,6 @@ def mostrar_proyecciones():
 
     df_factores = calculos.obtener_factores_estacionalidad_dia()
     
-    # CORRECCIÓN: Generar 'dia_index' a partir de 'dia_de_la_semana' para que coincida con el weekday de la fecha
     if not df_factores.empty and "dia_de_la_semana" in df_factores.columns:
         df_factores["dia_index"] = df_factores["dia_de_la_semana"].apply(normalizar_dia_semana)
 
@@ -82,6 +81,15 @@ def mostrar_proyecciones():
     else:
         df_inv_hoy = pd.DataFrame()
 
+    # Obtener tanques y límites mínimos configurados por estación[cite: 7]
+    df_tanques = db.obtener_tanques_estaciones()
+    if df_tanques:
+        df_tanques = pd.DataFrame(df_tanques)
+        if "producto" in df_tanques.columns:
+            df_tanques["producto"] = df_tanques["producto"].astype(str).str.capitalize()
+    else:
+        df_tanques = pd.DataFrame()
+
     fecha_hoy = date.today()
     productos = ["Regular", "Premium", "Diesel"]
 
@@ -94,6 +102,16 @@ def mostrar_proyecciones():
             color_Hex = "#424242"
 
         st.markdown(f"<h3 style='color: {color_Hex};'>⛽ {producto}</h3>", unsafe_allow_html=True)
+
+        # Extraer el limite_min específico para esta estación y producto
+        limite_min_val = 0.0
+        if not df_tanques.empty and "id_estacion" in df_tanques.columns and "producto" in df_tanques.columns and "limite_min" in df_tanques.columns:
+            match_tanque = df_tanques[
+                (df_tanques["id_estacion"] == id_estacion_sel) & 
+                (df_tanques["producto"] == producto)
+            ]
+            if not match_tanque.empty and pd.notna(match_tanque["limite_min"].values[0]):
+                limite_min_val = float(match_tanque["limite_min"].values[0])
 
         # --- LÓGICA DE INVENTARIO INICIAL Y PROYECCIÓN HASTA HOY ---
         inv_inicial_hoy = 0.0
@@ -132,6 +150,10 @@ def mostrar_proyecciones():
                                         elif "vdp_ponderada" in match_v.columns and pd.notna(match_v["vdp_ponderada"].values[0]):
                                             venta_dia_intermedio = float(match_v["vdp_ponderada"].values[0])
                             
+                            # Truncar venta intermedia si alcanza el límite mínimo
+                            if inv_actual_proyectado - venta_dia_intermedio < limite_min_val:
+                                venta_dia_intermedio = max(0.0, inv_actual_proyectado - limite_min_val)
+
                             inv_actual_proyectado -= venta_dia_intermedio
                             current_date += timedelta(days=1)
                         
@@ -170,7 +192,15 @@ def mostrar_proyecciones():
                             venta_estimada_dia = float(val)
 
             inv_inicial = inv_actual
-            inv_final = inv_inicial - venta_estimada_dia
+            inv_final_prov = inv_inicial - venta_estimada_dia
+
+            # REGLA: Truncar la venta si el inventario final provisional desciende por debajo del límite mínimo
+            if inv_final_prov < limite_min_val:
+                inv_final = limite_min_val
+                venta_estimada_dia = max(0.0, inv_inicial - limite_min_val)
+            else:
+                inv_final = inv_final_prov
+
             ds = (inv_final / venta_estimada_dia) if venta_estimada_dia > 0 else 0.0
 
             inv_iniciales.append(round(inv_inicial, 2))
