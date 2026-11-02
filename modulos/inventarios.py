@@ -1,30 +1,3 @@
-import streamlit as st
-import pandas as pd
-from datetime import date
-import database as db
-from servicios import validacion  # <-- Se eliminó formato
-
-def mostrar_inventarios():
-    st.header("📋 Consulta y Actualización de Inventarios")
-    
-    datos_estaciones_usuario = db.obtener_estaciones_usuario()
-    datos_inventarios = db.obtener_inventarios()
-
-    if not datos_estaciones_usuario:
-        st.warning("No hay asignaciones de estaciones y usuarios registradas en la base de datos.")
-        return
-
-    df_est_usu = pd.DataFrame(datos_estaciones_usuario)
-
-    col_fecha, col_usuario = st.columns(2)
-
-    with col_fecha:
-        fecha_seleccionada = st.date_input(
-            "Selecciona la fecha:",
-            value=date.today(),
-            key="filtro_fecha_inventarios"
-        )
-
     with col_usuario:
         usuarios_disponibles = sorted(list(df_est_usu["usuario"].unique()))
         usuario_seleccionado = st.selectbox(
@@ -91,9 +64,9 @@ def mostrar_inventarios():
         "id_estacion": st.column_config.TextColumn("ID", width="small", disabled=True),
         "nombre": st.column_config.TextColumn("Estación", width="medium", disabled=True),
         "plaza": st.column_config.TextColumn("Plaza", width="medium", disabled=True),
-        "Regular": st.column_config.NumberColumn("Regular", width="small", format="%d"),
-        "Premium": st.column_config.NumberColumn("Regular", width="small", format="%d"),
-        "Diesel": st.column_config.NumberColumn("Regular", width="small", format="%d")
+        "Regular": st.column_config.NumberColumn("Regular", width="small", format="%.2f"),
+        "Premium": st.column_config.NumberColumn("Premium", width="small", format="%.2f"),
+        "Diesel": st.column_config.NumberColumn("Diesel", width="small", format="%.2f")
     }
 
     st.dataframe(
