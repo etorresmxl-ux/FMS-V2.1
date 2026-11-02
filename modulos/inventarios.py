@@ -119,17 +119,48 @@ def mostrar_inventarios():
                     if pd.notna(volumen):
                         registros.append({
                             "id_estacion": row["id_estacion"],
-                            "fecha": fecha_seleccionada,
+                            "fecha": str(fecha_seleccionada),
                             "producto": producto,
                             "volumen": float(volumen)
                         })
 
-            if registros:
-                db.guardar_inventarios_por_fecha(registros)
-                st.success("¡Cambios guardados exitosamente!")
-                st.rerun()
-            else:
+            if not registros:
                 st.info("No hay valores para guardar.")
+                st.stop()
+
+            supabase = db._require_supabase()
+            for registro in registros:
+                id_estacion = registro["id_estacion"]
+                fecha_str = str(registro["fecha"])
+                producto = db._normalizar_producto(registro["producto"])
+
+                existente = (
+                    supabase.table("inventarios")
+                    .select("*")
+                    .eq("id_estacion", id_estacion)
+                    .eq("fecha", fecha_str)
+                    .eq("producto", producto)
+                    .limit(1)
+                    .execute()
+                )
+
+                if existente.data:
+                    supabase.table("inventarios") \
+                        .update({"volumen": registro["volumen"]}) \
+                        .eq("id_estacion", id_estacion) \
+                        .eq("fecha", fecha_str) \
+                        .eq("producto", producto) \
+                        .execute()
+                else:
+                    supabase.table("inventarios").insert({
+                        "id_estacion": id_estacion,
+                        "fecha": fecha_str,
+                        "producto": producto,
+                        "volumen": registro["volumen"]
+                    }).execute()
+
+            st.success("¡Cambios guardados exitosamente!")
+            st.rerun()
 
         except Exception as e:
             st.error(f"No se pudieron guardar los inventarios: {e}")
