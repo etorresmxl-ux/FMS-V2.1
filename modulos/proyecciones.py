@@ -4,25 +4,19 @@ from datetime import date, timedelta
 import database as db
 from servicios import calculos
 
-
 def formatear_fecha_corta(fecha):
-    """
-    Devuelve la fecha en el formato pedido: 'ddd - dd-mmm' (p. ej. 'lun - 28-oct').
-    """
+    """ Devuelve la fecha en el formato pedido: 'ddd - dd-mmm' (p. ej. 'lun - 28-oct'). """
     dias_semana = {0: "lun", 1: "mar", 2: "mié", 3: "jue", 4: "vie", 5: "sáb", 6: "dom"}
-    meses = {
-        1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
-        7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"
+    meses = { 
+        1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun", 
+        7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic" 
     }
     dia_str = dias_semana[fecha.weekday()]
     mes_str = meses[fecha.month]
     return f"{dia_str} - {fecha.day:02d}-{mes_str}"
 
-
 def normalizar_dia_semana(valor_dia):
-    """
-    Mapea nombres largos, con acentos o capitalizados a un índice entero (0 = Lunes, 6 = Domingo).
-    """
+    """ Mapea nombres largos, con acentos o capitalizados a un índice entero (0 = Lunes, 6 = Domingo). """
     if not isinstance(valor_dia, str):
         return None
     val = valor_dia.strip().lower()
@@ -36,7 +30,6 @@ def normalizar_dia_semana(valor_dia):
         'domingo': 6, 'dom': 6
     }
     return mapa.get(val, None)
-
 
 def mostrar_proyecciones():
     st.header("📈 Proyección e Integridad de Inventarios (14 Días)")
@@ -157,11 +150,21 @@ def mostrar_proyecciones():
 
         df_proyeccion = pd.DataFrame(data_dict)
 
+        for col in df_proyeccion.columns:
+            if col != "Concepto":
+                df_proyeccion[col] = df_proyeccion.apply(
+                    lambda row, c=col: (
+                        f"{int(round(float(row[c]))):,}" if row["Concepto"] in ["Inventario Inicial", "Venta Estimada", "Inventario Final"]
+                        else f"{float(row[c]):.1f}"
+                    ),
+                    axis=1
+                )
+
         column_config = {
             "Concepto": st.column_config.TextColumn("Concepto", width="medium")
         }
         for col in [c for c in df_proyeccion.columns if c != "Concepto"]:
-            column_config[col] = st.column_config.NumberColumn(col, width="small", format=",.0f")
+            column_config[col] = st.column_config.TextColumn(col, width="small")
 
         st.dataframe(
             df_proyeccion,
