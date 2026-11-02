@@ -15,6 +15,22 @@ def formatear_fecha_corta(fecha):
     mes_str = meses[fecha.month]
     return f"{dia_str} {fecha.day:02d}-{mes_str}"
 
+def normalizar_dia_semana(valor_dia):
+    """ Mapea nombres largos, con acentos o capitalizados a un índice entero (0 = Lunes, 6 = Domingo). """
+    if not isinstance(valor_dia, str):
+        return None
+    val = valor_dia.strip().lower()
+    mapa = {
+        'lunes': 0, 'lun': 0,
+        'martes': 1, 'mar': 1,
+        'miércoles': 2, 'miercoles': 2, 'mié': 2, 'mie': 2,
+        'jueves': 3, 'jue': 3,
+        'viernes': 4, 'vie': 4,
+        'sábado': 5, 'sabado': 5, 'sáb': 5, 'sab': 5,
+        'domingo': 6, 'dom': 6
+    }
+    return mapa.get(val, None)
+
 def mostrar_proyecciones():
     st.header("📈 Proyección e Integridad de Inventarios (14 Días)")
     
@@ -199,4 +215,3 @@ def mostrar_proyecciones():
             hide_index=True,
             column_config=column_config
         )
-```[cite: 1]
