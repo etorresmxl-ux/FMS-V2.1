@@ -1,3 +1,4 @@
+import streamlit as st
 import pandas as pd
 import database as db
 
@@ -50,13 +51,14 @@ def obtener_calculos_combustible():
     return df_resultado
 
 
+@st.cache_data
 def obtener_factores_estacionalidad_dia():
     """
-    Obtiene los datos de la vista de estacionalidad por día de la semana[cite: 3],
+    Obtiene los datos de la vista de estacionalidad por día de la semana,
     calcula el factor de estacionalidad y lo pondera con la venta diaria general.
     """
     try:
-        data = db.obtener_venta_promedio_dia_de_la_semana_12w()
+        data = db.obtener_venta_promedio_dia_semana_12w()
         df = pd.DataFrame(data)
     except Exception:
         df = pd.DataFrame()
