@@ -105,7 +105,7 @@ def mostrar_inventarios():
         width='stretch',
         hide_index=True,
         column_config=column_config,
-        height=850
+        height=800
     )
 
     # Botón de guardado ubicado en la parte inferior después de la tabla
