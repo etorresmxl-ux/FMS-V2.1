@@ -7,15 +7,28 @@ from servicios import validacion
 def mostrar_inventarios():
     st.header("📋 Consulta y Actualización de Inventarios")
 
-    # ANOTACIÓN CLAVE 1: Inyección de CSS para reducir el alto (padding) de las filas
+    # =========================================================================
+    # CSS CORREGIDO Y MEJORADO PARA FORZAR EL ALTO DE LAS FILAS
+    # =========================================================================
     st.markdown("""
         <style>
-        /* Reduce la altura vertical y el espaciado de las celdas en st.dataframe */
-        [data-testid="stDataFrame"] [role="gridcell"] {
+        /* Ajusta la altura de las celdas y filas en los dataframes de Streamlit */
+        [data-testid="stDataFrame"] div[data-baseweb="card"],
+        [data-testid="stDataFrame"] iframe {
+            width: 100%;
+        }
+        
+        /* Forzar reducción de altura en los contenedores internos de la cuadrícula */
+        [data-testid="stDataFrame"] [role="row"] {
+            min-height: 28px !important;
+            height: 28px !important;
+        }
+        
+        [data-testid="stDataFrame"] [role="gridcell"],
+        [data-testid="stDataFrame"] th {
             padding-top: 2px !important;
             padding-bottom: 2px !important;
-            min-height: 12px !important;
-            height: 12px !important;
+            line-height: 20px !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -112,11 +125,11 @@ def mostrar_inventarios():
         "Diesel": st.column_config.TextColumn("Diesel", width="small")
     }
 
-    # ANOTACIÓN CLAVE 2: Ajuste de la altura de la tabla para mostrar ~25 filas
+    # Renderizado de la tabla con altura fija para 25 filas
     st.dataframe(
         df_resultado,
         width='stretch',
         hide_index=True,
         column_config=column_config,
-        height=850  # Define el alto en píxeles del contenedor para visualizar hasta 25 filas[cite: 1]
+        height=850
     )
