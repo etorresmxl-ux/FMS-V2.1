@@ -4,7 +4,6 @@ from datetime import date
 import database as db
 from servicios import validacion
 
-
 def mostrar_inventarios():
     st.header("📋 Consulta y Actualización de Inventarios")
 
@@ -87,13 +86,17 @@ def mostrar_inventarios():
 
     df_resultado = validacion.validar_matriz_productos(df_estaciones_filtradas, df_resultado, productos)
 
+    for prod in productos:
+        if prod in df_resultado.columns:
+            df_resultado[prod] = df_resultado[prod].apply(lambda x: f"{int(round(float(x))):,}" if pd.notna(x) else "0")
+
     column_config = {
         "id_estacion": st.column_config.TextColumn("ID", width="small", disabled=True),
         "nombre": st.column_config.TextColumn("Estación", width="medium", disabled=True),
         "plaza": st.column_config.TextColumn("Plaza", width="medium", disabled=True),
-        "Regular": st.column_config.NumberColumn("Regular", width="small", format=",.0f"),
-        "Premium": st.column_config.NumberColumn("Premium", width="small", format=",.0f"),
-        "Diesel": st.column_config.NumberColumn("Diesel", width="small", format=",.0f")
+        "Regular": st.column_config.TextColumn("Regular", width="small"),
+        "Premium": st.column_config.TextColumn("Premium", width="small"),
+        "Diesel": st.column_config.TextColumn("Diesel", width="small")
     }
 
     st.dataframe(
