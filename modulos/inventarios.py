@@ -103,5 +103,6 @@ def mostrar_inventarios():
         df_resultado,
         width='stretch',
         hide_index=True,
-        column_config=column_config
+        column_config=column_config,
+        height=850
     )
