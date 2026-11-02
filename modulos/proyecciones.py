@@ -81,12 +81,14 @@ def mostrar_proyecciones():
     else:
         df_inv_hoy = pd.DataFrame()
 
-    # Obtener tanques y límites mínimos configurados por estación[cite: 7]
-    df_tanques = db.obtener_tanques_estaciones()
-    if df_tanques:
-        df_tanques = pd.DataFrame(df_tanques)
+    # Obtener tanques y límites mínimos configurados por estación desde Supabase[cite: 8]
+    datos_tanques = db.obtener_tanques_estaciones()
+    if datos_tanques:
+        df_tanques = pd.DataFrame(datos_tanques)
         if "producto" in df_tanques.columns:
-            df_tanques["producto"] = df_tanques["producto"].astype(str).str.capitalize()
+            df_tanques["producto"] = df_tanques["producto"].astype(str).str.strip().str.capitalize()
+        if "id_estacion" in df_tanques.columns:
+            df_tanques["id_estacion"] = df_tanques["id_estacion"].astype(str).str.strip()
     else:
         df_tanques = pd.DataFrame()
 
@@ -103,11 +105,11 @@ def mostrar_proyecciones():
 
         st.markdown(f"<h3 style='color: {color_Hex};'>⛽ {producto}</h3>", unsafe_allow_html=True)
 
-        # Extraer el limite_min específico para esta estación y producto
+        # Extraer el limite_min específico para esta estación y producto con normalización estricta[cite: 8]
         limite_min_val = 0.0
         if not df_tanques.empty and "id_estacion" in df_tanques.columns and "producto" in df_tanques.columns and "limite_min" in df_tanques.columns:
             match_tanque = df_tanques[
-                (df_tanques["id_estacion"] == id_estacion_sel) & 
+                (df_tanques["id_estacion"] == str(id_estacion_sel).strip()) & 
                 (df_tanques["producto"] == producto)
             ]
             if not match_tanque.empty and pd.notna(match_tanque["limite_min"].values[0]):
@@ -117,8 +119,8 @@ def mostrar_proyecciones():
         inv_inicial_hoy = 0.0
         if not df_inv_hoy.empty and "id_estacion" in df_inv_hoy.columns and "producto" in df_inv_hoy.columns:
             df_inv_est_prod = df_inv_hoy[
-                (df_inv_hoy["id_estacion"] == id_estacion_sel) &
-                (df_inv_hoy["producto"].str.capitalize() == producto)
+                (df_inv_hoy["id_estacion"].astype(str).str.strip() == str(id_estacion_sel).strip()) &
+                (df_inv_hoy["producto"].astype(str).str.strip().str.capitalize() == producto)
             ].copy()
             
             if not df_inv_est_prod.empty:
@@ -139,8 +141,8 @@ def mostrar_proyecciones():
                             venta_dia_intermedio = 0.0
                             if not df_factores.empty:
                                 mask_f = (
-                                    (df_factores["id_estacion"] == id_estacion_sel) &
-                                    (df_factores["producto"].str.capitalize() == producto)
+                                    (df_factores["id_estacion"].astype(str).str.strip() == str(id_estacion_sel).strip()) &
+                                    (df_factores["producto"].astype(str).str.strip().str.capitalize() == producto)
                                 )
                                 if "dia_index" in df_factores.columns:
                                     match_v = df_factores[mask_f & (df_factores["dia_index"] == current_date.weekday())]
@@ -176,8 +178,8 @@ def mostrar_proyecciones():
             venta_estimada_dia = 0.0
             if not df_factores.empty:
                 mask = (
-                    (df_factores["id_estacion"] == id_estacion_sel) &
-                    (df_factores["producto"].str.capitalize() == producto)
+                    (df_factores["id_estacion"].astype(str).str.strip() == str(id_estacion_sel).strip()) &
+                    (df_factores["producto"].astype(str).str.strip().str.capitalize() == producto)
                 )
 
                 if "dia_index" in df_factores.columns:
