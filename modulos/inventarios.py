@@ -1,3 +1,31 @@
+import streamlit as st
+import pandas as pd
+from datetime import date
+import database as db
+from servicios import validacion
+
+
+def mostrar_inventarios():
+    st.header("📋 Consulta y Actualización de Inventarios")
+
+    datos_estaciones_usuario = db.obtener_estaciones_usuario()
+    datos_inventarios = db.obtener_inventarios()
+
+    if not datos_estaciones_usuario:
+        st.warning("No hay asignaciones de estaciones y usuarios registradas en la base de datos.")
+        return
+
+    df_est_usu = pd.DataFrame(datos_estaciones_usuario)
+
+    col_fecha, col_usuario = st.columns(2)
+
+    with col_fecha:
+        fecha_seleccionada = st.date_input(
+            "Selecciona la fecha:",
+            value=date.today(),
+            key="filtro_fecha_inventarios"
+        )
+
     with col_usuario:
         usuarios_disponibles = sorted(list(df_est_usu["usuario"].unique()))
         usuario_seleccionado = st.selectbox(
@@ -57,16 +85,15 @@
 
     df_resultado = df_resultado[["id_estacion", "nombre", "plaza"] + productos]
 
-    # Aplicar el servicio de validación de tanques_estaciones
     df_resultado = validacion.validar_matriz_productos(df_estaciones_filtradas, df_resultado, productos)
 
     column_config = {
         "id_estacion": st.column_config.TextColumn("ID", width="small", disabled=True),
         "nombre": st.column_config.TextColumn("Estación", width="medium", disabled=True),
         "plaza": st.column_config.TextColumn("Plaza", width="medium", disabled=True),
-        "Regular": st.column_config.NumberColumn("Regular", width="small", format="%,.0f"),
-        "Premium": st.column_config.NumberColumn("Premium", width="small", format="%,.0f"),
-        "Diesel": st.column_config.NumberColumn("Diesel", width="small", format="%,.0f")
+        "Regular": st.column_config.NumberColumn("Regular", width="small", format=",.0f"),
+        "Premium": st.column_config.NumberColumn("Premium", width="small", format=",.0f"),
+        "Diesel": st.column_config.NumberColumn("Diesel", width="small", format=",.0f")
     }
 
     st.dataframe(
