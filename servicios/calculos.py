@@ -1,16 +1,17 @@
 import pandas as pd
 import database as db
-import streamlit as st
 
 @st.cache_data 
 def obtener_calculos_combustible():
-    """ Obtiene la venta semanal ponderada desde la vista de Supabase, aplicando normalización estricta de texto al inicio. """
+    """ 
+    Obtiene la venta semanal ponderada desde la vista de Supabase, aplicando normalización estricta de texto al inicio. 
+    """
     try:
         data = db.obtener_venta_semanal_promedio_12w()
         df = pd.DataFrame(data)
     except Exception:
         df = pd.DataFrame()
-        
+
     if df.empty:
         return pd.DataFrame()
 
@@ -49,32 +50,46 @@ def obtener_calculos_combustible():
     return df_resultado
 
 
-@st.cache_data 
-def obtener_vdp_diario_12w(): 
-    """ Obtiene el promedio por día de la semana desde la vista de Supabase con normalización numérica. """ 
-    try: 
-        data = db.obtener_venta_promedio_dia_semana_12w() 
-        df = pd.DataFrame(data) 
-    except Exception: 
+def obtener_factores_estacionalidad_dia():
+    """
+    Obtiene los datos de la vista de estacionalidad por día de la semana[cite: 3],
+    calcula el factor de estacionalidad y lo pondera con la venta diaria general.
+    """
+    try:
+        data = db.obtener_venta_promedio_dia_de_la_semana_12w()
+        df = pd.DataFrame(data)
+    except Exception:
         df = pd.DataFrame()
 
-    if not df.empty:
-        df["id_estacion"] = df["id_estacion"].astype(str).str.strip()
-        df["producto"] = df["producto"].astype(str).str.strip().str.capitalize()
-        # Asegurar que el día de la semana sea numérico entero (1=Lunes ... 7=Domingo)
-        if "dia_de_la_semana" in df.columns:
-            df["dia_de_la_semana"] = pd.to_numeric(df["dia_de_la_semana"], errors="coerce")
+    if df.empty:
+        return pd.DataFrame()
+
+    # Normalización estricta
+    df["id_estacion"] = df["id_estacion"].astype(str).str.strip()
+    df["producto"] = df["producto"].astype(str).str.strip().str.capitalize()
+    df["dia_de_la_semana"] = pd.to_numeric(df["dia_de_la_semana"], errors="coerce")
+    df["volumen"] = pd.to_numeric(df["volumen"], errors="coerce").fillna(0.0)
+
+    # Promedio histórico general por estación y producto
+    promedio_general = df.groupby(["id_estacion", "producto"])["volumen"].mean().reset_index(name="volumen_medio_general")
+    df = pd.merge(df, promedio_general, on=["id_estacion", "producto"], how="left")
+
+    # Factor de estacionalidad relativo del día
+    df["factor_estacionalidad"] = df.apply(
+        lambda row: row["volumen"] / row["volumen_medio_general"] if row["volumen_medio_general"] > 0 else 1.0, 
+        axis=1
+    )
+
+    # Integración con la VDP ponderada de 12 semanas
+    df_pond = obtener_calculos_combustible()
+    if not df_pond.empty:
+        df = pd.merge(df, df_pond[["id_estacion", "producto", "vdp_ponderada"]], on=["id_estacion", "producto"], how="left")
+        df["vdp_ponderada"] = df["vdp_ponderada"].fillna(df["volumen_medio_general"])
+    else:
+        df["vdp_ponderada"] = df["volumen"]
+
+    # Generación de la columna clave 'vp_dia' requerida en las proyecciones
+    df["vp_dia"] = df["vdp_ponderada"] * df["factor_estacionalidad"]
+    df["dia_index"] = df["dia_de_la_semana"]
 
     return df
-
-
-@st.cache_data 
-def obtener_factores_estacionalidad_dia(): 
-    """ Cruza la VDP Ponderada con la Venta Promedio por Día de la Semana para calcular la venta proyectada específica por día de manera limpia. """ 
-    df_ponderados = obtener_calculos_combustible() 
-    df_diarios = obtener_vdp_diario_12w()
-    
-    if df_diarios.empty:
-        return pd.DataFrame()
-        
-    return df_diarios
