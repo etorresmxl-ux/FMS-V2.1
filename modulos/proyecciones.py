@@ -4,10 +4,10 @@ from datetime import date, timedelta
 import database as db
 from servicios import calculos
 
-def formatear_fecha_corta(f): 
+def formatear_fecha_corta(f):
     return f.strftime("%d/%m")
 
-def mostrar_proyecciones(): 
+def mostrar_proyecciones():
     st.header("📈 Proyección e Integridad de Inventarios (14 Días)")
 
     datos_estaciones = db.obtener_estaciones()
@@ -141,7 +141,7 @@ def mostrar_proyecciones():
                                 if "dia_index" in df_factores.columns:
                                     match_v = df_factores[mask_f & (df_factores["dia_index"] == current_date.isoweekday())]
                                     if not match_v.empty:
-                                        for col_val in ["venta_proyectada_dia", "vp_dia", "volumen", "vdp_ponderada"]:
+                                        for col_val in ["vp_dia", "vdp_ponderada", "volumen"]:
                                             if col_val in match_v.columns and pd.notna(match_v[col_val].values[0]):
                                                 val = float(match_v[col_val].values[0])
                                                 if val > 0:
@@ -186,7 +186,7 @@ def mostrar_proyecciones():
                 if "dia_index" in df_factores.columns:
                     match_venta = df_factores[mask & (df_factores["dia_index"] == fecha_dia.isoweekday())]
                     if not match_venta.empty:
-                        for col_val in ["venta_proyectada_dia", "vp_dia", "volumen", "vdp_ponderada"]:
+                        for col_val in ["vp_dia", "vdp_ponderada", "volumen"]:
                             if col_val in match_venta.columns and pd.notna(match_venta[col_val].values[0]):
                                 val = float(match_venta[col_val].values[0])
                                 if val > 0:
