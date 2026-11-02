@@ -7,9 +7,7 @@ from servicios import validacion
 def mostrar_inventarios():
     st.header("📋 Consulta y Actualización de Inventarios")
 
-    # =========================================================================
     # CSS CORREGIDO Y MEJORADO PARA FORZAR EL ALTO DE LAS FILAS
-    # =========================================================================
     st.markdown("""
         <style>
         /* Ajusta la altura de las celdas y filas en los dataframes de Streamlit */
@@ -20,8 +18,8 @@ def mostrar_inventarios():
         
         /* Forzar reducción de altura en los contenedores internos de la cuadrícula */
         [data-testid="stDataFrame"] [role="row"] {
-            min-height: 28px !important;
-            height: 28px !important;
+            min-height: 20px !important;
+            height: 20px !important;
         }
         
         [data-testid="stDataFrame"] [role="gridcell"],
