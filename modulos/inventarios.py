@@ -7,9 +7,7 @@ from servicios import validacion
 def mostrar_inventarios():
     st.header("📋 Consulta y Actualización de Inventarios")
 
-    # =========================================================================
     # ANOTACIÓN CLAVE 1: Inyección de CSS para reducir el alto (padding) de las filas
-    # =========================================================================
     st.markdown("""
         <style>
         /* Reduce la altura vertical y el espaciado de las celdas en st.dataframe */
@@ -17,7 +15,7 @@ def mostrar_inventarios():
             padding-top: 2px !important;
             padding-bottom: 2px !important;
             min-height: 24px !important;
-            height: 28px !important;
+            height: 24px !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -114,9 +112,7 @@ def mostrar_inventarios():
         "Diesel": st.column_config.TextColumn("Diesel", width="small")
     }
 
-    # =========================================================================
     # ANOTACIÓN CLAVE 2: Ajuste de la altura de la tabla para mostrar ~25 filas
-    # =========================================================================
     st.dataframe(
         df_resultado,
         width='stretch',
