@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 import database as db
-import calculos
+from servicios import calculos
 
 def normalizar_dia_semana(valor_dia):
     """Mapea nombres largos, con acentos o capitalizados a un índice entero (0 = Lunes, 6 = Domingo)."""
@@ -157,7 +157,6 @@ def mostrar_proyecciones():
                                 if "dia_index" in df_factores.columns:
                                     match_v = df_factores[mask_f & (df_factores["dia_index"] == current_date.weekday())]
                                     if not match_v.empty:
-                                        # Corrección: Se incluyen de forma ordenada las columnas reales de estacionalidad y venta diaria
                                         for col_val in ["venta_proyectada_dia", "vp_dia", "volumen", "vdp_ponderada"]:
                                             if col_val in match_v.columns and pd.notna(match_v[col_val].values[0]):
                                                 val = float(match_v[col_val].values[0])
@@ -203,7 +202,6 @@ def mostrar_proyecciones():
                 if "dia_index" in df_factores.columns:
                     match_venta = df_factores[mask & (df_factores["dia_index"] == fecha_dia.weekday())]
                     if not match_venta.empty:
-                        # Corrección clave: Priorizar 'venta_proyectada_dia' y 'vp_dia' generadas en cálculos/vistas
                         for col_val in ["venta_proyectada_dia", "vp_dia", "volumen", "vdp_ponderada"]:
                             if col_val in match_venta.columns and pd.notna(match_venta[col_val].values[0]):
                                 val = float(match_venta[col_val].values[0])
