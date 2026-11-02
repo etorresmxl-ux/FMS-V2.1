@@ -14,8 +14,8 @@ def mostrar_inventarios():
         [data-testid="stDataFrame"] [role="gridcell"] {
             padding-top: 2px !important;
             padding-bottom: 2px !important;
-            min-height: 24px !important;
-            height: 24px !important;
+            min-height: 12px !important;
+            height: 12px !important;
         }
         </style>
     """, unsafe_allow_html=True)
