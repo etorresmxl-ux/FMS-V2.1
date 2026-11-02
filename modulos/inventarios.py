@@ -113,7 +113,7 @@ def mostrar_inventarios():
 
     # Botón de guardado ubicado en la parte inferior después de la tabla con integración a Supabase
     st.write("")
-    if st.button("Guardar Cambios de Inventario", type="primary", use_container_width=True):
+    if st.button("Guardar/Actualizar Inventario", type="primary", use_container_width=True):
         try:
             exitos = 0
             
