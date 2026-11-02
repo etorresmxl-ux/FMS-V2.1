@@ -1,5 +1,3 @@
-import pandas as pd 
-import database as db
 import streamlit as st
 import pandas as pd
 import database as db
@@ -20,17 +18,19 @@ def obtener_calculos_combustible():
     if df.empty:
         return pd.DataFrame()
 
-    # 1. Normalización estricta e inmediata de claves y productos
+    # Normalización estricta
     df["id_estacion"] = df["id_estacion"].astype(str).str.strip()
     df["producto"] = df["producto"].astype(str).str.strip().str.capitalize()
+    df["semana"] = pd.to_numeric(df["semana"], errors="coerce")
+    df["volumen"] = pd.to_numeric(df["volumen"], errors="coerce").fillna(0.0)
 
-    # 2. Ordenar de la semana más reciente a la más antigua
+    # Ordenar de la semana más reciente a la más antigua
     df = df.sort_values(by=['id_estacion', 'producto', 'semana'], ascending=[True, True, False])
 
-    # 3. Ranking de recencia (1 = la más reciente)
+    # Ranking de recencia (1 = la más reciente)
     df['ranking_semana'] = df.groupby(['id_estacion', 'producto']).cumcount() + 1
 
-    # 4. Ponderaciones: 50% (sem 1-2), 30% (sem 3-8), 20% (sem 9-12)
+    # Ponderaciones: 50% (sem 1-2), 30% (sem 3-8), 20% (sem 9-12)
     def asignar_peso(row):
         r = row['ranking_semana']
         if r in [1, 2]:
@@ -43,7 +43,7 @@ def obtener_calculos_combustible():
 
     df['peso'] = df.apply(asignar_peso, axis=1)
 
-    # 5. Cálculo VSP y VDP Ponderada
+    # Cálculo VSP y VDP Ponderada
     df['volumen_ponderado'] = df['volumen'] * df['peso']
 
     df_resultado = df.groupby(['id_estacion', 'producto']).agg(
@@ -55,19 +55,40 @@ def obtener_calculos_combustible():
     return df_resultado
 
 
+@st.cache_data
 def obtener_factores_estacionalidad_dia(): 
     """ 
-    Obtiene los datos de la vista de estacionalidad por día de la semana[cite: 3], 
-    calcula el factor de estacionalidad y lo multiplica estrictamente por la 
-    vdp_ponderada de las 12 semanas. 
+    Obtiene los datos de la vista de estacionalidad por día de la semana, 
+    calcula el factor de estacionalidad relativo y lo multiplica estrictamente 
+    por la vdp_ponderada de las 12 semanas. 
     """ 
     try: 
-        data = db.obtener_venta_promedio_dia_de_la_semana_12w() 
+        data = db.obtener_venta_promedio_dia_semana_12w() 
         df = pd.DataFrame(data) 
     except Exception: 
         df = pd.DataFrame()
 
+    # Obtenemos siempre la base ponderada independiente de la vista diaria
+    df_pond = obtener_calculos_combustible()
+
     if df.empty:
+        # Si la vista de días está vacía, construimos un fallback directo usando la VDP ponderada para los 7 días
+        if not df_pond.empty:
+            registros_extendidos = []
+            for _, row in df_pond.iterrows():
+                for dia in range(1, 8):
+                    registros_extendidos.append({
+                        "id_estacion": row["id_estacion"],
+                        "producto": row["producto"],
+                        "dia_de_la_semana": dia,
+                        "volumen": row["vdp_ponderada"],
+                        "volumen_medio_general": row["vdp_ponderada"],
+                        "factor_estacionalidad": 1.0,
+                        "vdp_ponderada": row["vdp_ponderada"],
+                        "vp_dia": row["vdp_ponderada"],
+                        "dia_index": dia
+                    })
+            return pd.DataFrame(registros_extendidos)
         return pd.DataFrame()
 
     # Normalización estricta
@@ -86,8 +107,7 @@ def obtener_factores_estacionalidad_dia():
         axis=1
     )
 
-    # Integración con la VDP ponderada real de 12 semanas
-    df_pond = obtener_calculos_combustible()
+    # Integración estricta con la VDP Ponderada de 12 semanas
     if not df_pond.empty:
         df = pd.merge(df, df_pond[["id_estacion", "producto", "vdp_ponderada"]], on=["id_estacion", "producto"], how="left")
         df["vdp_ponderada"] = df["vdp_ponderada"].fillna(df["volumen_medio_general"])
