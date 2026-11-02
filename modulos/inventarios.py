@@ -107,7 +107,7 @@ def mostrar_inventarios():
         width='stretch',
         hide_index=True,
         column_config=column_config,
-        height=650,
+        height=680,
         key="editor_inventarios"
     )
 
