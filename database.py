@@ -11,9 +11,6 @@ def _normalizar_producto(producto):
         return ""
     return str(producto).strip().capitalize()
 
-### Inicializar cliente de Supabase usando el caché de Streamlit para no reconectar en cada rerun.
-### La conexión no se crea al importar el módulo si faltan credenciales; la app debe avisar al
-### ejecutar la operación y no romper el arranque de la aplicación.
 @st.cache_resource
 def get_supabase_client() -> Client | None:
     try:
@@ -50,12 +47,16 @@ def _limpiar_flotante(valor):
     except (ValueError, TypeError):
         return 0.0
 
-### =========================================================
-### --- FUNCIONES DE ESTACIONES ---
-### =========================================================
+# =========================================================
+# --- FUNCIONES DE ESTACIONES ---
+# =========================================================
 def obtener_estaciones():
-    response = _require_supabase().table("estaciones").select("*").execute()
-    return response.data
+    try:
+        response = _require_supabase().table("estaciones").select("*").execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Error al obtener estaciones: {e}")
+        return []
 
 def insertar_estacion(id_estacion, nombre, plaza, tad):
     data = {
@@ -66,36 +67,45 @@ def insertar_estacion(id_estacion, nombre, plaza, tad):
     }
     return _require_supabase().table("estaciones").upsert(data, on_conflict="id_estacion").execute()
 
-### =========================================================
-### --- FUNCIONES DE TANQUES ESTACIONES ---
-### =========================================================
+# =========================================================
+# --- FUNCIONES DE TANQUES ESTACIONES ---
+# =========================================================
 def obtener_tanques_estaciones():
-    """Obtiene la relación de tanques y productos configurados por estación."""
-    response = _require_supabase().table("tanques_estaciones").select("*").execute()
-    return response.data
+    try:
+        response = _require_supabase().table("tanques_estaciones").select("*").execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Error al obtener tanques: {e}")
+        return []
 
-### =========================================================
-### --- FUNCIONES DE ESTACIONES USUARIO ---
-### =========================================================
+# =========================================================
+# --- FUNCIONES DE ESTACIONES USUARIO ---
+# =========================================================
 def obtener_estaciones_usuario():
-    """Obtiene la relación de estaciones y usuarios asignados desde Supabase."""
-    response = _require_supabase().table("estaciones_usuario").select("*, estaciones(nombre, plaza, tad)").execute()
-    return response.data
+    try:
+        response = _require_supabase().table("estaciones_usuario").select("*, estaciones(nombre, plaza, tad)").execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Error al obtener estaciones de usuario: {e}")
+        return []
 
 def insertar_estacion_usuario(id_estacion, usuario):
-    """Inserta la asignación de una estación a un usuario."""
     data = {
         "id_estacion": id_estacion,
         "usuario": usuario
     }
     return _require_supabase().table("estaciones_usuario").upsert(data, on_conflict="id_estacion,usuario").execute()
 
-### =========================================================
-### --- FUNCIONES DE INVENTARIOS ---
-### =========================================================
+# =========================================================
+# --- FUNCIONES DE INVENTARIOS ---
+# =========================================================
 def obtener_inventarios():
-    response = _require_supabase().table("inventarios").select("*, estaciones(nombre)").execute()
-    return response.data
+    try:
+        response = _require_supabase().table("inventarios").select("*, estaciones(nombre)").execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Error al obtener inventarios: {e}")
+        return []
 
 def insertar_inventario(id_estacion, fecha, producto, volumen):
     data = {
@@ -106,12 +116,16 @@ def insertar_inventario(id_estacion, fecha, producto, volumen):
     }
     return _require_supabase().table("inventarios").upsert(data, on_conflict="id_estacion,fecha,producto").execute()
 
-### =========================================================
-### --- FUNCIONES DE VENTAS ---
-### =========================================================
+# =========================================================
+# --- FUNCIONES DE VENTAS ---
+# =========================================================
 def obtener_ventas():
-    response = _require_supabase().table("ventas").select("*, estaciones(nombre)").execute()
-    return response.data
+    try:
+        response = _require_supabase().table("ventas").select("*, estaciones(nombre)").execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Error al obtener ventas: {e}")
+        return []
 
 def insertar_venta(id_estacion, fecha, producto, volumen):
     data = {
@@ -122,15 +136,22 @@ def insertar_venta(id_estacion, fecha, producto, volumen):
     }
     return _require_supabase().table("ventas").upsert(data, on_conflict="id_estacion,fecha,producto").execute()
 
-### =========================================================
-### --- FUNCIONES DE VISTAS SQL (ÚLTIMAS 12 SEMANAS) ---
-### =========================================================
+# =========================================================
+# --- FUNCIONES DE VISTAS SQL (ÚLTIMAS 12 SEMANAS) ---
+# =========================================================
 def obtener_venta_semanal_promedio_12w():
     """Obtiene la venta semanal de las últimas 12 semanas por estación y producto desde Supabase."""
-    response = _require_supabase().table("venta_semanal_promedio_12w").select("*").execute()
-    return response.data
+    try:
+        response = _require_supabase().table("venta_semanal_promedio_12w").select("*").execute()
+        return response.data if response.data else []
+    except Exception as e:
+        # Esto avisa en la interfaz si la vista SQL no existe o está vacía
+        return []
 
 def obtener_venta_promedio_dia_semana_12w():
     """Obtiene la venta promedio por día de la semana de las últimas 12 semanas por estación y producto desde Supabase."""
-    response = _require_supabase().table("venta_promedio_dia_de_la_semana_12w").select("*").execute()
-    return response.data
+    try:
+        response = _require_supabase().table("venta_promedio_dia_de_la_semana_12w").select("*").execute()
+        return response.data if response.data else []
+    except Exception as e:
+        return []
