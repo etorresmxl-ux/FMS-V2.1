@@ -86,10 +86,10 @@ def mostrar_inventarios():
 
     df_resultado = validacion.validar_matriz_productos(df_estaciones_filtradas, df_resultado, productos)
 
-    # Aseguramos que los valores de los productos sean numéricos (int o float) para permitir la edición correcta
+    # Corrección: Se utiliza errors="coerce" para transformar valores inválidos en NaN y .fillna(0) para rellenarlos
     for prod in productos:
         if prod in df_resultado.columns:
-            df_resultado[prod] = pd.to_numeric(df_resultado[prod], errors="fillna").fillna(0)
+            df_resultado[prod] = pd.to_numeric(df_resultado[prod], errors="coerce").fillna(0)
 
     # Configuración de columnas permitiendo edición numérica en regular, premium y diesel
     column_config = {
@@ -101,7 +101,7 @@ def mostrar_inventarios():
         "Diesel": st.column_config.NumberColumn("Diesel", width="small", min_value=0, step=1, format="%d")
     }
 
-    # Usamos st.data_editor en lugar de st.dataframe para habilitar la escritura en la tabla
+    # Usamos st.data_editor para habilitar la escritura en la tabla
     df_editado = st.data_editor(
         df_resultado,
         width='stretch',
@@ -114,5 +114,5 @@ def mostrar_inventarios():
     # Botón de guardado ubicado en la parte inferior después de la tabla
     st.write("")
     if st.button("Guardar Cambios de Inventario", type="primary", use_container_width=True):
-        # Aquí puedes recorrer 'df_editado' para guardar los valores actualizados en la base de datos para la fecha seleccionada
+        # Aquí puedes procesar 'df_editado' para guardar los valores actualizados en la base de datos
         st.success("¡Cambios guardados exitosamente!")
