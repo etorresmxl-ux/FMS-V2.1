@@ -14,6 +14,10 @@ def obtener_calculos_combustible():
     if df.empty:
         return pd.DataFrame()
 
+    # Normalizar identificadores y productos
+    df["id_estacion"] = df["id_estacion"].astype(str).str.strip()
+    df["producto"] = df["producto"].astype(str).str.strip().str.capitalize()
+
     # 1. Ordenar de la semana más reciente a la más antigua por estación y producto
     df = df.sort_values(by=['id_estacion', 'producto', 'semana'], ascending=[True, True, False])
 
@@ -47,16 +51,22 @@ def obtener_calculos_combustible():
 @st.cache_data
 def obtener_vdp_diario_12w():
     """ 
-    Obtiene el promedio por día de la semana (Lunes, Martes, etc.) de las últimas 12 semanas directamente desde la vista de Supabase[cite: 3]. 
+    Obtiene el promedio por día de la semana (Lunes, Martes, etc.) de las últimas 12 semanas desde Supabase[cite: 3]. 
     """
     data = db.obtener_venta_promedio_dia_semana_12w()
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    
+    if not df.empty:
+        df["id_estacion"] = df["id_estacion"].astype(str).str.strip()
+        df["producto"] = df["producto"].astype(str).str.strip().str.capitalize()
+        
+    return df
 
 @st.cache_data
 def obtener_factores_estacionalidad_dia():
     """
     Cruza la VDP Ponderada con la Venta Promedio por Día de la Semana para calcular 
-    el Factor de Estacionalidad y la Venta Proyectada específica por día sin redundancias matemáticas.
+    la venta proyectada específica por día sin redundancias.
     """
     df_ponderados = obtener_calculos_combustible()
     df_diarios = obtener_vdp_diario_12w()
@@ -64,16 +74,10 @@ def obtener_factores_estacionalidad_dia():
     if df_ponderados.empty or df_diarios.empty:
         return pd.DataFrame()
 
-    # Normalizar tipos de texto y nombres de columnas para evitar fallos en el merge
-    df_diarios["id_estacion"] = df_diarios["id_estacion"].astype(str).str.strip()
-    df_diarios["producto"] = df_diarios["producto"].astype(str).str.strip().str.capitalize()
-    
-    df_ponderados["id_estacion"] = df_ponderados["id_estacion"].astype(str).str.strip()
-    df_ponderados["producto"] = df_ponderados["producto"].astype(str).str.strip().str.capitalize()
-
     if 'volumen' in df_diarios.columns:
         df_diarios = df_diarios.rename(columns={'volumen': 'vp_dia'})
 
+    # Cruzar datos por estación y producto con claves limpias
     df_factor = pd.merge(
         df_diarios,
         df_ponderados[['id_estacion', 'producto', 'vdp_ponderada']],
@@ -81,13 +85,15 @@ def obtener_factores_estacionalidad_dia():
         how='inner'
     )
 
-    # Cálculo del factor de estacionalidad respecto a la VDP ponderada general
+    if df_factor.empty:
+        return pd.DataFrame()
+
+    # Cálculo del factor y asignación directa de la venta del día
     df_factor['factor_dia'] = df_factor.apply(
         lambda row: row['vp_dia'] / row['vdp_ponderada'] if row['vdp_ponderada'] > 0 else 1.0, 
         axis=1
     )
 
-    # Corrección limpia: Asignación directa o ponderada de la venta proyectada del día
     df_factor['venta_proyectada_dia'] = df_factor['vp_dia']
 
     return df_factor
