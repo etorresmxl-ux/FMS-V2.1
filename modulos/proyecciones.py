@@ -72,7 +72,7 @@
             "Concepto": st.column_config.TextColumn("Concepto", width="medium")
         }
         for col in [c for c in df_proyeccion.columns if c != "Concepto"]:
-            column_config[col] = st.column_config.NumberColumn(col, width="small", format="%.2f")
+            column_config[col] = st.column_config.NumberColumn(col, width="small", format="%,.0f")
 
         st.dataframe(
             df_proyeccion,

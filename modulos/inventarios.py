@@ -64,9 +64,9 @@
         "id_estacion": st.column_config.TextColumn("ID", width="small", disabled=True),
         "nombre": st.column_config.TextColumn("Estación", width="medium", disabled=True),
         "plaza": st.column_config.TextColumn("Plaza", width="medium", disabled=True),
-        "Regular": st.column_config.NumberColumn("Regular", width="small", format="%.2f"),
-        "Premium": st.column_config.NumberColumn("Premium", width="small", format="%.2f"),
-        "Diesel": st.column_config.NumberColumn("Diesel", width="small", format="%.2f")
+        "Regular": st.column_config.NumberColumn("Regular", width="small", format="%,.0f"),
+        "Premium": st.column_config.NumberColumn("Premium", width="small", format="%,.0f"),
+        "Diesel": st.column_config.NumberColumn("Diesel", width="small", format="%,.0f")
     }
 
     st.dataframe(
