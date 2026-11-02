@@ -65,12 +65,18 @@ def mostrar_proyecciones():
     if not id_estacion_sel:
         return
 
+    # Obtener factores de estacionalidad y cálculos ponderados base
     df_factores = calculos.obtener_factores_estacionalidad_dia()
+    df_ponderados = calculos.obtener_calculos_combustible()
     
     if not df_factores.empty and "dia_de_la_semana" in df_factores.columns:
         df_factores["dia_index"] = df_factores["dia_de_la_semana"].apply(normalizar_dia_semana)
         df_factores["id_estacion"] = df_factores["id_estacion"].astype(str).str.strip()
         df_factores["producto"] = df_factores["producto"].astype(str).str.strip().str.capitalize()
+
+    if not df_ponderados.empty:
+        df_ponderados["id_estacion"] = df_ponderados["id_estacion"].astype(str).str.strip()
+        df_ponderados["producto"] = df_ponderados["producto"].astype(str).str.strip().str.capitalize()
 
     df_inv_hoy = db.obtener_inventarios()
     
@@ -117,6 +123,16 @@ def mostrar_proyecciones():
             if not match_tanque.empty and pd.notna(match_tanque["limite_min"].values[0]):
                 limite_min_val = float(match_tanque["limite_min"].values[0])
 
+        # Obtener VDP Ponderada de respaldo para la estación y producto actual
+        vdp_base = 0.0
+        if not df_ponderados.empty:
+            match_pond = df_ponderados[
+                (df_ponderados["id_estacion"] == str(id_estacion_sel).strip()) &
+                (df_ponderados["producto"] == producto)
+            ]
+            if not match_pond.empty and "vdp_ponderada" in match_pond.columns:
+                vdp_base = float(match_pond["vdp_ponderada"].values[0])
+
         # --- LÓGICA DE INVENTARIO INICIAL Y PROYECCIÓN HASTA HOY ---
         inv_inicial_hoy = 0.0
         if not df_inv_hoy.empty and "id_estacion" in df_inv_hoy.columns and "producto" in df_inv_hoy.columns:
@@ -141,6 +157,8 @@ def mostrar_proyecciones():
                         
                         while current_date < fecha_hoy:
                             venta_dia_intermedio = 0.0
+                            encontro_venta = False
+                            
                             if not df_factores.empty:
                                 mask_f = (
                                     (df_factores["id_estacion"] == str(id_estacion_sel).strip()) &
@@ -154,7 +172,11 @@ def mostrar_proyecciones():
                                                 val = float(match_v[col_val].values[0])
                                                 if val > 0:
                                                     venta_dia_intermedio = val
+                                                    encontro_venta = True
                                                     break
+                            
+                            if not encontro_venta and vdp_base > 0:
+                                venta_dia_intermedio = vdp_base
                             
                             if inv_actual_proyectado - venta_dia_intermedio < limite_min_val:
                                 venta_dia_intermedio = max(0.0, inv_actual_proyectado - limite_min_val)
@@ -179,6 +201,8 @@ def mostrar_proyecciones():
             fechas_cols.append(fecha_fmt)
 
             venta_estimada_dia = 0.0
+            encontro_venta = False
+
             if not df_factores.empty:
                 mask = (
                     (df_factores["id_estacion"].astype(str).str.strip() == str(id_estacion_sel).strip()) &
@@ -193,7 +217,12 @@ def mostrar_proyecciones():
                                 val = float(match_venta[col_val].values[0])
                                 if val > 0:
                                     venta_estimada_dia = val
+                                    encontro_venta = True
                                     break
+
+            # Respaldo: Si no hay factor de día, usar VDP Ponderada general
+            if not encontro_venta and vdp_base > 0:
+                venta_estimada_dia = vdp_base
 
             inv_inicial = inv_actual
             
