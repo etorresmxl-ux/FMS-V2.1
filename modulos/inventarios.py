@@ -58,7 +58,7 @@ def render_inventarios(supabase_client, usuario_actual: str):
     df_pivot = pd.DataFrame()
     if not df_inv.empty and "producto" in df_inv.columns and "volumen" in df_inv.columns:
         df_inv["producto"] = df_inv["producto"].astype(str).str.lower().str.strip()
-        df_pivot = df_inv.pivot(index="id_estacion", columns="producto", values="volumen")
+        df_pivot = df_inv.pivot_table(index="id_estacion", columns="producto", values="volumen", aggfunc="first")
 
     for prod in ["regular", "premium", "diesel"]:
         valores_columna = []
