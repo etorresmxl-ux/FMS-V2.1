@@ -3,21 +3,13 @@ import math
 import streamlit as st
 from supabase import create_client, Client
 
-def _normalizar_producto(producto):
-    """Normaliza nombres de producto para evitar errores con nulos o valores no string."""
-    if producto is None:
-        return ""
-    if isinstance(producto, float) and math.isnan(producto):
-        return ""
-    return str(producto).strip().capitalize()
-
 @st.cache_resource
 def get_supabase_client() -> Client | None:
     try:
         supabase_cfg = st.secrets.get("supabase", {})
     except Exception:
         supabase_cfg = {}
-    
+
     url = supabase_cfg.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
     key = supabase_cfg.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
 
@@ -36,7 +28,6 @@ def _require_supabase() -> Client:
     return client
 
 def _limpiar_flotante(valor):
-    """Convierte valores nulos, NaN o vacíos a 0.0 para cumplir con JSON y Supabase."""
     if valor is None:
         return 0.0
     try:
@@ -47,111 +38,34 @@ def _limpiar_flotante(valor):
     except (ValueError, TypeError):
         return 0.0
 
-# =========================================================
-# --- FUNCIONES DE ESTACIONES ---
-# =========================================================
+# --- FUNCIONES DE ESTACIONES E INVENTARIOS ---
+
 def obtener_estaciones():
-    try:
-        response = _require_supabase().table("estaciones").select("*").execute()
-        return response.data if response.data else []
-    except Exception as e:
-        st.error(f"Error al obtener estaciones: {e}")
-        return []
+    response = _require_supabase().table("estaciones").select("*").execute()
+    return response.data
 
-def insertar_estacion(id_estacion, nombre, plaza, tad):
-    data = {
-        "id_estacion": id_estacion,
-        "nombre": nombre,
-        "plaza": plaza,
-        "tad": tad
-    }
-    return _require_supabase().table("estaciones").upsert(data, on_conflict="id_estacion").execute()
-
-# =========================================================
-# --- FUNCIONES DE TANQUES ESTACIONES ---
-# =========================================================
-def obtener_tanques_estaciones():
-    try:
-        response = _require_supabase().table("tanques_estaciones").select("*").execute()
-        return response.data if response.data else []
-    except Exception as e:
-        st.error(f"Error al obtener tanques: {e}")
-        return []
-
-# =========================================================
-# --- FUNCIONES DE ESTACIONES USUARIO ---
-# =========================================================
-def obtener_estaciones_usuario():
-    try:
-        response = _require_supabase().table("estaciones_usuario").select("*, estaciones(nombre, plaza, tad)").execute()
-        return response.data if response.data else []
-    except Exception as e:
-        st.error(f"Error al obtener estaciones de usuario: {e}")
-        return []
-
-def insertar_estacion_usuario(id_estacion, usuario):
-    data = {
-        "id_estacion": id_estacion,
-        "usuario": usuario
-    }
-    return _require_supabase().table("estaciones_usuario").upsert(data, on_conflict="id_estacion,usuario").execute()
-
-# =========================================================
-# --- FUNCIONES DE INVENTARIOS ---
-# =========================================================
 def obtener_inventarios():
+    response = _require_supabase().table("inventarios").select("*").execute()
+    return response.data
+
+def obtener_tanques_estaciones():
+    response = _require_supabase().table("tanques_estaciones").select("*").execute()
+    return response.data
+
+# --- FUNCIONES DE VISTAS DE SUPABASE (Reemplazan a calculos.py) ---
+
+def obtener_vdp_ponderada_12w():
+    """Obtiene la VDP ponderada calculada directamente desde la vista de Supabase."""
     try:
-        response = _require_supabase().table("inventarios").select("*, estaciones(nombre)").execute()
-        return response.data if response.data else []
-    except Exception as e:
-        st.error(f"Error al obtener inventarios: {e}")
+        response = _require_supabase().table("vdp_ponderada_12w").select("*").execute()
+        return response.data
+    except Exception:
         return []
 
-def insertar_inventario(id_estacion, fecha, producto, volumen):
-    data = {
-        "id_estacion": id_estacion,
-        "fecha": str(fecha),
-        "producto": _normalizar_producto(producto),
-        "volumen": _limpiar_flotante(volumen)
-    }
-    return _require_supabase().table("inventarios").upsert(data, on_conflict="id_estacion,fecha,producto").execute()
-
-# =========================================================
-# --- FUNCIONES DE VENTAS ---
-# =========================================================
-def obtener_ventas():
+def obtener_factor_venta_diasemanal():
+    """Obtiene los factores de venta por día de la semana desde la vista de Supabase."""
     try:
-        response = _require_supabase().table("ventas").select("*, estaciones(nombre)").execute()
-        return response.data if response.data else []
-    except Exception as e:
-        st.error(f"Error al obtener ventas: {e}")
-        return []
-
-def insertar_venta(id_estacion, fecha, producto, volumen):
-    data = {
-        "id_estacion": id_estacion,
-        "fecha": str(fecha),
-        "producto": _normalizar_producto(producto),
-        "volumen": _limpiar_flotante(volumen)
-    }
-    return _require_supabase().table("ventas").upsert(data, on_conflict="id_estacion,fecha,producto").execute()
-
-# =========================================================
-# --- FUNCIONES DE VISTAS SQL (ÚLTIMAS 12 SEMANAS) ---
-# =========================================================
-def obtener_venta_semanal_promedio_12w():
-    """Obtiene la venta semanal de las últimas 12 semanas por estación y producto desde Supabase."""
-    try:
-        response = _require_supabase().table("venta_semanal_promedio_12w").select("*").execute()
-        return response.data if response.data else []
-    except Exception as e:
-        # Esto avisa en la interfaz si la vista SQL no existe o está vacía
-        return []
-
-def obtener_venta_promedio_dia_semana_12w():
-    """Obtiene la venta promedio por día de la semana de las últimas 12 semanas por estación y producto desde Supabase."""
-    try:
-        response = _require_supabase().table("venta_promedio_dia_de_la_semana_12w").select("*").execute()
-        return response.data if response.data else []
-    except Exception as e:
+        response = _require_supabase().table("factor_venta_diasemanal").select("*").execute()
+        return response.data
+    except Exception:
         return []
