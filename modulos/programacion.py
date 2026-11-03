@@ -15,7 +15,7 @@ def obtener_programa_cargas():
         return []
 
 def mostrar_programacion():
-    st.header("🚚 Programación de Cargas e Inventarios (14 Días)")
+    st.header("🚚 Programación de Cargas")
 
     datos_estaciones = db.obtener_estaciones()
     if not datos_estaciones:
