@@ -4,7 +4,9 @@ import streamlit as st
 import database as db
 
 def formatear_fecha_corta(f):
-    return f.strftime("%d/%m")
+    dias = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+    meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+    return f"{dias[f.weekday()]} {f.strftime('%d')}-{meses[f.month - 1]}"
 
 def obtener_programa_cargas():
     """Obtiene el programa de cargas desde la tabla de Supabase."""
@@ -133,15 +135,6 @@ def mostrar_programacion():
 
         st.markdown(f"<h3 style='color: {color_Hex};'>⛽ {producto}</h3>", unsafe_allow_html=True)
 
-        limite_min_val = 0.0
-        if not df_tanques.empty and "id_estacion" in df_tanques.columns and "producto" in df_tanques.columns and "limite_min" in df_tanques.columns:
-            match_tanque = df_tanques[
-                (df_tanques["id_estacion"] == id_estacion_str) & 
-                (df_tanques["producto"] == producto)
-            ]
-            if not match_tanque.empty and pd.notna(match_tanque["limite_min"].values[0]):
-                limite_min_val = float(match_tanque["limite_min"].values[0])
-
         vdp_base = 0.0
         if not df_ponderados.empty:
             match_pond = df_ponderados[
@@ -206,6 +199,7 @@ def mostrar_programacion():
 
         # --- CICLO DE PROYECCIÓN DE LOS 14 DÍAS ---
         fechas_cols = []
+        fechas_reales = []
         inv_iniciales = []
         ventas_est = []
         cargas_prog = []
@@ -218,6 +212,7 @@ def mostrar_programacion():
             fecha_dia = fecha_hoy + timedelta(days=i)
             fecha_fmt = formatear_fecha_corta(fecha_dia)
             fechas_cols.append(fecha_fmt)
+            fechas_reales.append(fecha_dia)
 
             # Buscar factor de temporalidad para el día de la semana correspondiente
             factor_dia = 1.0
@@ -233,10 +228,8 @@ def mostrar_programacion():
                             factor_dia = float(match_factor[col_factor].values[0])
                             break
 
-            # Venta Estimada = vdp_ponderada * factor_venta_diasemanal
             venta_estimada_dia = vdp_base * factor_dia
 
-            # Obtener carga programada de la tabla programa_cargas
             carga_programada_dia = 0.0
             if not df_cargas.empty:
                 match_carg = df_cargas[
@@ -248,10 +241,7 @@ def mostrar_programacion():
                     carga_programada_dia = float(match_carg["volumen"].values[0])
 
             inv_inicial = inv_actual
-            
-            # Inventario Final = Inventario Inicial + Carga Programada - Venta Estimada
             inv_final = inv_inicial + carga_programada_dia - venta_estimada_dia
-
             ds = (inv_final / venta_estimada_dia) if venta_estimada_dia > 0 else 0.0
 
             inv_iniciales.append(round(inv_inicial, 2))
@@ -276,25 +266,48 @@ def mostrar_programacion():
 
         df_proyeccion = pd.DataFrame(data_dict)
 
-        for col in df_proyeccion.columns:
-            if col != "Concepto":
-                df_proyeccion[col] = df_proyeccion.apply(
-                    lambda row, c=col: (
-                        f"{int(round(float(row[c]))):,}" if row["Concepto"] in ["Inventario Inicial", "Venta Estimada", "Carga Programada", "Inventario Final"]
-                        else f"{float(row[c]):.1f}"
-                    ),
-                    axis=1
-                )
-
+        # Configuración de columnas para el editor
         column_config = {
-            "Concepto": st.column_config.TextColumn("Concepto", width="medium")
+            "Concepto": st.column_config.TextColumn("Concepto", width="medium", disabled=True)
         }
         for col in [c for c in df_proyeccion.columns if c != "Concepto"]:
-            column_config[col] = st.column_config.TextColumn(col, width="small")
+            column_config[col] = st.column_config.NumberColumn(col, format="%.2f", width="small")
 
-        st.dataframe(
+        # Tabla interactiva con st.data_editor
+        edited_df = st.data_editor(
             df_proyeccion,
             use_container_width=True,
             hide_index=True,
-            column_config=column_config
+            column_config=column_config,
+            key=f"editor_proyeccion_{producto}_{id_estacion_str}"
         )
+
+        # Botón para guardar cambios de la carga programada
+        if st.button(f"Guardar Cambios de Carga - {producto}", key=f"btn_guardar_{producto}_{id_estacion_str}"):
+            try:
+                fila_carga = edited_df[edited_df["Concepto"] == "Carga Programada"]
+                if not fila_carga.empty:
+                    supabase = db._require_supabase()
+                    for idx, fecha_fmt in enumerate(fechas_cols):
+                        if fecha_fmt in fila_carga.columns:
+                            nuevo_volumen = float(fila_carga[fecha_fmt].values[0])
+                            fecha_real = fechas_reales[idx]
+
+                            data_upsert = {
+                                "id_estacion": id_estacion_str,
+                                "producto": producto,
+                                "fecha": fecha_real.isoformat(),
+                                "volumen": nuevo_volumen
+                            }
+                            supabase.table("programa_cargas").upsert(
+                                data_upsert,
+                                on_conflict="id_estacion,producto,fecha"
+                            ).execute()
+                    st.success(f"¡Cargas programadas para {producto} guardadas y registradas correctamente en Supabase!")
+                    st.rerun()
+                else:
+                    st.warning("No se encontró la fila de Carga Programada para guardar.")
+            except Exception as e:
+                st.error(f"Error al registrar los cambios: {e}")
+
+        st.markdown("---")
