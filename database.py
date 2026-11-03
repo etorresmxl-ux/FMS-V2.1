@@ -61,18 +61,36 @@ def obtener_estaciones_usuario():
 
 def insertar_inventario(id_estacion, fecha, producto, volumen):
     """
-    Inserta o actualiza un registro de inventario en la base de datos 
-    utilizando 'upsert' basado en la llave única (id_estacion, fecha, producto)[cite: 10].
+    Inserta, actualiza o elimina un registro de inventario según el valor del volumen.
+    Si el volumen es None, NaN o está vacío, elimina el registro de la base de datos.
     """
     client = _require_supabase()
     
+    id_estacion_str = str(id_estacion).strip()
+    fecha_str = str(fecha)
+    producto_str = str(producto).strip().capitalize()
+    
+    # Validar si el volumen es nulo, NaN, cadena vacía o indicativo de no registro
+    if volumen is None or volumen == "" or (isinstance(volumen, float) and (math.isnan(volumen) or math.isinf(volumen))):
+        # Eliminar el registro de Supabase si existe para no almacenar ceros ni datos nulos
+        response = client.table("inventarios").delete().eq("id_estacion", id_estacion_str).eq("fecha", fecha_str).eq("producto", producto_str).execute()
+        return response.data
+    
+    try:
+        val_float = float(volumen)
+    except (ValueError, TypeError):
+        # Si no se puede convertir a número válido, eliminar el registro
+        response = client.table("inventarios").delete().eq("id_estacion", id_estacion_str).eq("fecha", fecha_str).eq("producto", producto_str).execute()
+        return response.data
+
     data = {
-        "id_estacion": str(id_estacion).strip(),
-        "fecha": str(fecha),
-        "producto": str(producto).strip().capitalize(),
-        "volumen": float(volumen)
+        "id_estacion": id_estacion_str,
+        "fecha": fecha_str,
+        "producto": producto_str,
+        "volumen": val_float
     }
     
+    # Realizar 'upsert' si el valor es un número real válido
     response = client.table("inventarios").upsert(
         data,
         on_conflict="id_estacion,fecha,producto"
