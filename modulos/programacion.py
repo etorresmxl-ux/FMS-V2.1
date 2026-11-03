@@ -48,6 +48,8 @@ def mostrar_programacion():
     if not id_estacion_sel:
         return
 
+    id_estacion_str = str(id_estacion_sel).strip()
+
     # Obtención de datos directamente desde las vistas y tablas de Supabase
     datos_factores = db.obtener_factor_venta_diasemanal()
     datos_ponderados = db.obtener_vdp_ponderada_12w()
@@ -57,10 +59,13 @@ def mostrar_programacion():
     df_ponderados = pd.DataFrame(datos_ponderados) if datos_ponderados else pd.DataFrame()
     df_cargas = pd.DataFrame(datos_cargas) if datos_cargas else pd.DataFrame()
 
-    if not df_factores.empty and "dia_de_la_semana" in df_factores.columns:
-        df_factores["dia_index"] = pd.to_numeric(df_factores["dia_de_la_semana"], errors="coerce")
+    if not df_factores.empty:
         df_factores["id_estacion"] = df_factores["id_estacion"].astype(str).str.strip()
         df_factores["producto"] = df_factores["producto"].astype(str).str.strip().str.capitalize()
+        if "diasemanal" in df_factores.columns:
+            df_factores["dia_index"] = pd.to_numeric(df_factores["diasemanal"], errors="coerce")
+        elif "dia_de_la_semana" in df_factores.columns:
+            df_factores["dia_index"] = pd.to_numeric(df_factores["dia_de_la_semana"], errors="coerce")
 
     if not df_ponderados.empty:
         df_ponderados["id_estacion"] = df_ponderados["id_estacion"].astype(str).str.strip()
@@ -72,7 +77,7 @@ def mostrar_programacion():
         if "fecha" in df_cargas.columns:
             df_cargas["fecha"] = pd.to_datetime(df_cargas["fecha"]).dt.date
         if "volumen" in df_cargas.columns:
-            df_cargas["volumen"] = pd.to_numeric(df_cargas["volumen"], errors="fillna").fillna(0.0)
+            df_cargas["volumen"] = pd.to_numeric(df_cargas["volumen"], errors="coerce").fillna(0.0)
 
     df_inv_hoy = db.obtener_inventarios()
 
@@ -113,7 +118,7 @@ def mostrar_programacion():
         limite_min_val = 0.0
         if not df_tanques.empty and "id_estacion" in df_tanques.columns and "producto" in df_tanques.columns and "limite_min" in df_tanques.columns:
             match_tanque = df_tanques[
-                (df_tanques["id_estacion"] == str(id_estacion_sel).strip()) & 
+                (df_tanques["id_estacion"] == id_estacion_str) & 
                 (df_tanques["producto"] == producto)
             ]
             if not match_tanque.empty and pd.notna(match_tanque["limite_min"].values[0]):
@@ -122,7 +127,7 @@ def mostrar_programacion():
         vdp_base = 0.0
         if not df_ponderados.empty:
             match_pond = df_ponderados[
-                (df_ponderados["id_estacion"] == str(id_estacion_sel).strip()) &
+                (df_ponderados["id_estacion"] == id_estacion_str) &
                 (df_ponderados["producto"] == producto)
             ]
             if not match_pond.empty and "vdp_ponderada" in match_pond.columns:
@@ -132,7 +137,7 @@ def mostrar_programacion():
         inv_inicial_hoy = 0.0
         if not df_inv_hoy.empty and "id_estacion" in df_inv_hoy.columns and "producto" in df_inv_hoy.columns:
             df_inv_est_prod = df_inv_hoy[
-                (df_inv_hoy["id_estacion"] == str(id_estacion_sel).strip()) &
+                (df_inv_hoy["id_estacion"] == id_estacion_str) &
                 (df_inv_hoy["producto"] == producto)
             ].copy()
             
@@ -151,33 +156,25 @@ def mostrar_programacion():
                         current_date = ultima_fecha
                         
                         while current_date < fecha_hoy:
-                            venta_dia_intermedio = 0.0
-                            encontro_venta = False
+                            factor_intermedio = 1.0
+                            if not df_factores.empty and "dia_index" in df_factores.columns:
+                                match_f = df_factores[
+                                    (df_factores["id_estacion"] == id_estacion_str) &
+                                    (df_factores["producto"] == producto) &
+                                    (df_factores["dia_index"] == current_date.isoweekday())
+                                ]
+                                if not match_f.empty:
+                                    for col_factor in ["factor", "factor_venta_diasemanal", "factor_estacionalidad"]:
+                                        if col_factor in match_f.columns and pd.notna(match_f[col_factor].values[0]):
+                                            factor_intermedio = float(match_f[col_factor].values[0])
+                                            break
                             
-                            if not df_factores.empty:
-                                mask_f = (
-                                    (df_factores["id_estacion"] == str(id_estacion_sel).strip()) &
-                                    (df_factores["producto"] == producto)
-                                )
-                                if "dia_index" in df_factores.columns:
-                                    match_v = df_factores[mask_f & (df_factores["dia_index"] == current_date.isoweekday())]
-                                    if not match_v.empty:
-                                        for col_val in ["vp_dia", "vdp_ponderada", "volumen"]:
-                                            if col_val in match_v.columns and pd.notna(match_v[col_val].values[0]):
-                                                val = float(match_v[col_val].values[0])
-                                                if val > 0:
-                                                    venta_dia_intermedio = val
-                                                    encontro_venta = True
-                                                    break
-                            
-                            if not encontro_venta and vdp_base > 0:
-                                venta_dia_intermedio = vdp_base
+                            venta_dia_intermedio = vdp_base * factor_intermedio
 
-                            # Buscar carga programada en días intermedios pasados si aplica
                             carga_intermedia = 0.0
                             if not df_cargas.empty:
                                 match_c_ant = df_cargas[
-                                    (df_cargas["id_estacion"] == str(id_estacion_sel).strip()) &
+                                    (df_cargas["id_estacion"] == id_estacion_str) &
                                     (df_cargas["producto"] == producto) &
                                     (df_cargas["fecha"] == current_date)
                                 ]
@@ -204,34 +201,28 @@ def mostrar_programacion():
             fecha_fmt = formatear_fecha_corta(fecha_dia)
             fechas_cols.append(fecha_fmt)
 
-            venta_estimada_dia = 0.0
-            encontro_venta = False
+            # Buscar factor de temporalidad para el día de la semana correspondiente
+            factor_dia = 1.0
+            if not df_factores.empty and "dia_index" in df_factores.columns:
+                match_factor = df_factores[
+                    (df_factores["id_estacion"] == id_estacion_str) &
+                    (df_factores["producto"] == producto) &
+                    (df_factores["dia_index"] == fecha_dia.isoweekday())
+                ]
+                if not match_factor.empty:
+                    for col_factor in ["factor", "factor_venta_diasemanal", "factor_estacionalidad"]:
+                        if col_factor in match_factor.columns and pd.notna(match_factor[col_factor].values[0]):
+                            factor_dia = float(match_factor[col_factor].values[0])
+                            break
 
-            if not df_factores.empty:
-                mask = (
-                    (df_factores["id_estacion"].astype(str).str.strip() == str(id_estacion_sel).strip()) &
-                    (df_factores["producto"] == producto)
-                )
+            # Venta Estimada = vdp_ponderada * factor_venta_diasemanal
+            venta_estimada_dia = vdp_base * factor_dia
 
-                if "dia_index" in df_factores.columns:
-                    match_venta = df_factores[mask & (df_factores["dia_index"] == fecha_dia.isoweekday())]
-                    if not match_venta.empty:
-                        for col_val in ["vp_dia", "vdp_ponderada", "volumen"]:
-                            if col_val in match_venta.columns and pd.notna(match_venta[col_val].values[0]):
-                                val = float(match_venta[col_val].values[0])
-                                if val > 0:
-                                    venta_estimada_dia = val
-                                    encontro_venta = True
-                                    break
-
-            if not encontro_venta and vdp_base > 0:
-                venta_estimada_dia = vdp_base
-
-            # Obtener carga programada de la tabla programa_cargas para esta fecha, estación y producto
+            # Obtener carga programada de la tabla programa_cargas
             carga_programada_dia = 0.0
             if not df_cargas.empty:
                 match_carg = df_cargas[
-                    (df_cargas["id_estacion"] == str(id_estacion_sel).strip()) &
+                    (df_cargas["id_estacion"] == id_estacion_str) &
                     (df_cargas["producto"] == producto) &
                     (df_cargas["fecha"] == fecha_dia)
                 ]
@@ -240,7 +231,7 @@ def mostrar_programacion():
 
             inv_inicial = inv_actual
             
-            # Cálculo exacto solicitado: Inventario Final = Inventario Inicial + Carga Programada - Venta Estimada
+            # Inventario Final = Inventario Inicial + Carga Programada - Venta Estimada
             inv_final = inv_inicial + carga_programada_dia - venta_estimada_dia
 
             ds = (inv_final / venta_estimada_dia) if venta_estimada_dia > 0 else 0.0
