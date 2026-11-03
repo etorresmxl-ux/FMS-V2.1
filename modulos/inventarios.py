@@ -60,7 +60,7 @@ def mostrar_inventarios():
                 columns="producto",
                 values="volumen",
                 aggfunc="sum",
-                fill_value=0
+                fill_value=None  # Usar None para mostrar celdas vacías si no hay datos previos
             ).reset_index()
 
             df_resultado = pd.merge(
@@ -68,28 +68,28 @@ def mostrar_inventarios():
                 df_pivot,
                 on="id_estacion",
                 how="left"
-            ).fillna(0)
+            )
         else:
             df_resultado = df_estaciones_filtradas[["id_estacion", "nombre", "plaza"]].copy()
             for prod in productos:
-                df_resultado[prod] = 0
+                df_resultado[prod] = None
     else:
         df_resultado = df_estaciones_filtradas[["id_estacion", "nombre", "plaza"]].copy()
         for prod in productos:
-            df_resultado[prod] = 0
+            df_resultado[prod] = None
 
     for col in productos:
         if col not in df_resultado.columns:
-            df_resultado[col] = 0
+            df_resultado[col] = None
 
     df_resultado = df_resultado[["id_estacion", "nombre", "plaza"] + productos]
 
     df_resultado = validacion.validar_matriz_productos(df_estaciones_filtradas, df_resultado, productos)
 
-    # Corrección: Se utiliza errors="coerce" para transformar valores inválidos en NaN y .fillna(0) para rellenarlos
+    # Limpieza numérica sin forzar ceros en valores vacíos (permite celdas en blanco)
     for prod in productos:
         if prod in df_resultado.columns:
-            df_resultado[prod] = pd.to_numeric(df_resultado[prod], errors="coerce").fillna(0)
+            df_resultado[prod] = pd.to_numeric(df_resultado[prod], errors="coerce")
 
     # Configuración de columnas permitiendo edición numérica en regular, premium y diesel
     column_config = {
@@ -125,7 +125,7 @@ def mostrar_inventarios():
                     if prod in row:
                         volumen_val = row[prod]
                         
-                        # Llamada a la función de inserción en la base de datos
+                        # Llamada a la función de inserción/eliminación en la base de datos
                         db.insertar_inventario(
                             id_estacion=id_estacion,
                             fecha=fecha_seleccionada,
@@ -134,7 +134,7 @@ def mostrar_inventarios():
                         )
                         exitos += 1
                         
-            st.success(f"¡Inventarios guardados y registrados en Supabase exitosamente!")
+            st.success("¡Inventarios guardados y registrados en Supabase exitosamente!")
             st.rerun()
         except Exception as e:
             st.error(f"Ocurrió un error al guardar los inventarios en la base de datos: {e}")
