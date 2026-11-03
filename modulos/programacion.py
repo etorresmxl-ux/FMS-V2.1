@@ -268,7 +268,7 @@ def mostrar_programacion():
 
         # Configuración de columnas para el editor
         column_config = {
-            "Concepto": st.column_config.TextColumn("Concepto", width="medium", disabled=True)
+            "Concepto": st.column_config.TextColumn("Concepto", width="small", disabled=True)
         }
         for col in [c for c in df_proyeccion.columns if c != "Concepto"]:
             column_config[col] = st.column_config.NumberColumn(col, format="%.2f", width="small")
