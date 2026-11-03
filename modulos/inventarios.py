@@ -12,7 +12,6 @@ def render_inventarios(supabase_client, usuario_actual: str):
     # 2. Obtener estaciones permitidas para el usuario actual desde Supabase
     @st.cache_data(ttl=60)
     def cargar_estaciones_usuario(usuario):
-        # Consultar la relación de estaciones por usuario
         res_usr = supabase_client.table("estaciones_usuario").select("id_estacion").eq("usuario", usuario).execute()
         ids = [item["id_estacion"] for item in res_usr.data]
         if not ids:
@@ -27,7 +26,8 @@ def render_inventarios(supabase_client, usuario_actual: str):
         st.warning("No tienes estaciones asignadas o registradas en el sistema.")
         return
 
-    # 3. Buscar registros existentes en la tabla 'inventarios' para las estaciones del usuario y la fecha seleccionada
+    # 3. Obtener registros existentes en la tabla 'inventarios' filtrando estrictamente 
+    # por las estaciones del usuario y la fecha seleccionada.
     ids_estaciones = df_estaciones["id_estacion"].tolist()
     
     res_inv = supabase_client.table("inventarios") \
@@ -44,7 +44,7 @@ def render_inventarios(supabase_client, usuario_actual: str):
         df_matriz[prod] = 0
 
     if not df_inv.empty and "producto" in df_inv.columns and "volumen" in df_inv.columns:
-        # Pivotar los datos existentes para que coincidan con las columnas de productos
+        # Pivotar los datos para transformar las filas de productos en columnas
         df_pivot = df_inv.pivot(index="id_estacion", columns="producto", values="volumen").reset_index()
         for prod in ["regular", "premium", "diesel"]:
             if prod in df_pivot.columns:
