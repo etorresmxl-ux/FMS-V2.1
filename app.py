@@ -19,18 +19,14 @@ with st.sidebar:
     
     menu = option_menu(
         menu_title="Menú Principal",
-        options=["Inventarios", "Proyecciones", "Programación", "Ventas", "Importador"],
-        icons=["clipboard-data", "graph-up", "calendar-check", "bar-chart", "upload"],
+        options=["Inventarios", "Programación", "Ventas", "Importador"],
+        icons=["clipboard-data", "calendar-check", "bar-chart", "upload"],
         default_index=0,
     )
 
 # SECCIÓN DE ENRUTAMIENTO
 if menu == "Inventarios":
     inventarios.mostrar_inventarios()
-elif menu == "Proyecciones":
-    # Módulo de Proyecciones existente (si aplica)
-    from modulos import proyecciones
-    proyecciones.mostrar_proyecciones()
 elif menu == "Programación":
     programacion.mostrar_programacion()
 elif menu == "Ventas":
