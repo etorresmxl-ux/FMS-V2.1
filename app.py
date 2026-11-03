@@ -32,9 +32,9 @@ def main():
         lista_usuarios = obtener_usuarios()
         
         if lista_usuarios:
-            usuario_actual = st.selectbox("Usuario actual", options=lista_usuarios)
+            usuario_actual = st.selectbox("Usuario:", options=lista_usuarios)
         else:
-            usuario_actual = st.text_input("Usuario actual", value="operador_principal")
+            usuario_actual = st.text_input("Usuario:", value="Programador")
             st.warning("No se encontraron registros de usuarios en la base de datos.")
         
         st.markdown("---")
