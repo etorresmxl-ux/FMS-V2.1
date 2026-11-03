@@ -51,6 +51,11 @@ def obtener_tanques_estaciones():
     response = _require_supabase().table("tanques_estaciones").select("*").execute()
     return response.data
 
+def obtener_estaciones_usuario():
+    try:
+        response = _require_supabase().table("estaciones_usuario").select("*, estaciones(*)").execute()
+        return response.data
+
 # --- FUNCIONES DE VISTAS DE SUPABASE (Reemplazan a calculos.py) ---
 def obtener_vdp_ponderada_12w():
     """Obtiene la VDP ponderada calculada directamente desde la vista de Supabase."""
