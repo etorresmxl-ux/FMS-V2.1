@@ -9,7 +9,7 @@ def formatear_fecha_corta(f):
     return f"{dias[f.weekday()]} {f.strftime('%d')}-{meses[f.month - 1]}"
 
 def obtener_programa_cargas():
-    """Obtiene el programa de cargas desde la tabla de Supabase."""
+    """Obtiene el programa de cargas desde la tabla de Supabase[cite: 3, 4]."""
     try:
         response = db._require_supabase().table("programa_cargas").select("*").execute()
         return response.data
@@ -17,7 +17,7 @@ def obtener_programa_cargas():
         return []
 
 def mostrar_programacion():
-    st.header("🚚 Programación de Cargas")
+    st.header("📅 Programa de Cargas y Proyecciones")
 
     # 1. Carga de asignaciones de estaciones por usuario
     datos_estaciones_usuario = db.obtener_estaciones_usuario()
@@ -123,9 +123,27 @@ def mostrar_programacion():
         df_tanques = pd.DataFrame()
 
     fecha_hoy = date.today()
-    productos = ["Regular", "Premium", "Diesel"]
 
-    for producto in productos:
+    # Validación y obtención dinámica de productos disponibles por estación desde tanques_estaciones
+    productos_disponibles = []
+    if not df_tanques.empty and "id_estacion" in df_tanques.columns:
+        df_tanques_estacion = df_tanques[df_tanques["id_estacion"] == id_estacion_str]
+        if not df_tanques_estacion.empty and "producto" in df_tanques_estacion.columns:
+            productos_disponibles = (
+                df_tanques_estacion["producto"]
+                .dropna()
+                .astype(str)
+                .str.strip()
+                .str.capitalize()
+                .unique()
+                .tolist()
+            )
+
+    if not productos_disponibles:
+        st.info("No hay productos o tanques registrados para esta estación en la base de datos.")
+        return
+
+    for producto in productos_disponibles:
         if producto == "Regular":
             color_Hex = "#2e7d32"
         elif producto == "Premium":
