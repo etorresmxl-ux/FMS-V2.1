@@ -37,21 +37,49 @@ def render_inventarios(supabase_client, usuario_actual: str):
     
     df_inv = pd.DataFrame(res_inv.data)
 
-    # 4. Estructurar la matriz base combinando estaciones y productos
-    df_matriz = df_estaciones.copy()
-    for prod in ["regular", "premium", "diesel"]:
-        df_matriz[prod] = 0
+# CÓDIGO NUEVO EN modulos/inventarios.py
+# 4. Obtener productos disponibles por estación desde tanques_estaciones
+res_tanques = supabase_client.table("tanques_estaciones") \
+    .select("id_estacion, producto") \
+    .in_("id_estacion", ids_estaciones) \
+    .execute()
 
-    # 5. Mapear los registros existentes normalizando textos de productos
-    if not df_inv.empty and "producto" in df_inv.columns and "volumen" in df_inv.columns:
-        df_inv["producto"] = df_inv["producto"].astype(str).str.lower().str.strip()
-        df_pivot = df_inv.pivot(index="id_estacion", columns="producto", values="volumen").reset_index()
+tanques_por_estacion = {}
+if res_tanques.data:
+    for item in res_tanques.data:
+        est = item["id_estacion"]
+        prod = item["producto"].lower().strip()
+        if est not in tanques_por_estacion:
+            tanques_por_estacion[est] = set()
+        tanques_por_estacion[est].add(prod)
+
+# 5. Estructurar matriz: si el producto no está disponible en la estación se deja como None
+df_matriz = df_estaciones.copy()
+
+# Mapear datos existentes de inventarios si los hay
+df_pivot = pd.DataFrame()
+if not df_inv.empty and "producto" in df_inv.columns and "volumen" in df_inv.columns:
+    df_inv["producto"] = df_inv["producto"].astype(str).str.lower().str.strip()
+    df_pivot = df_inv.pivot(index="id_estacion", columns="producto", values="volumen")
+
+for prod in ["regular", "premium", "diesel"]:
+    valores_columna = []
+    for _, row in df_estaciones.iterrows():
+        est_id = row["id_estacion"]
+        productos_permitidos = tanques_por_estacion.get(est_id, set())
         
-        for prod in ["regular", "premium", "diesel"]:
-            if prod in df_pivot.columns:
-                df_matriz[prod] = df_matriz["id_estacion"].map(
-                    df_pivot.set_index("id_estacion")[prod]
-                ).fillna(0).astype(int)
+        if prod not in productos_permitidos:
+            # Producto NO disponible en esta estación -> Celda vacía (None)
+            valores_columna.append(None)
+        else:
+            # Producto SÍ disponible
+            if not df_pivot.empty and est_id in df_pivot.index and prod in df_pivot.columns:
+                val = df_pivot.loc[est_id, prod]
+                valores_columna.append(int(val) if pd.notna(val) else 0)
+            else:
+                valores_columna.append(0)
+                
+    df_matriz[prod] = valores_columna
 
     st.markdown("Modifique los valores de volumen directamente en la tabla (solo números enteros)[cite: 3]:")
 
