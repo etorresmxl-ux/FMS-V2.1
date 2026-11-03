@@ -1,26 +1,23 @@
 import streamlit as st
-from streamlit_option_menu import option_menu
 from servicios.database import get_supabase_client
 from modulos.inventarios import render_inventarios
 
-# Configuración inicial de la página
+### Configuración inicial de la página
 st.set_page_config(
     page_title="Fuel Management System (FMS)",
     page_icon="⛽",
     layout="wide"
 )
 
-# Obtener la instancia centralizada de Supabase
+### Obtener la instancia centralizada de Supabase
 supabase = get_supabase_client()
 
 @st.cache_data(ttl=60)
 def obtener_usuarios() -> list:
     """Consulta y retorna una lista de usuarios únicos desde la tabla estaciones_usuario en Supabase."""
     try:
-        # Nota: Validar si tu tabla se llama 'estaciones_usuario' o 'estaciones_usuarios'
         res = supabase.table("estaciones_usuario").select("usuario").execute()
         if res.data:
-            # Extraer usuarios únicos y ordenarlos alfabéticamente
             usuarios = sorted(list(set([item["usuario"] for item in res.data])))
             return usuarios
     except Exception as e:
@@ -31,26 +28,23 @@ def main():
     with st.sidebar:
         st.image("https://img.icons8.com/color/96/fuel-tank.png", width=80)
         st.title("FMS-V2.1")
-        
+    
         # Obtener usuarios desde la base de datos de manera dinámica
         lista_usuarios = obtener_usuarios()
         
         if lista_usuarios:
             usuario_actual = st.selectbox("Usuario actual", options=lista_usuarios)
         else:
-            # Fallback en caso de que la tabla esté vacía o ocurra un error de conexión
             usuario_actual = st.text_input("Usuario actual", value="operador_principal")
             st.warning("No se encontraron registros de usuarios en la base de datos.")
         
         st.markdown("---")
         
-        # Menú de navegación principal con los módulos definidos
-        selected = option_menu(
-            menu_title="Menú Principal",
+        # Menú de navegación nativo
+        selected = st.radio(
+            "Menú Principal",
             options=["Inventarios", "Ventas", "Programación"],
-            icons=["clipboard-data", "cart-check", "calendar-range"],
-            menu_icon="cast",
-            default_index=0,
+            index=0
         )
         
         st.markdown("---")
