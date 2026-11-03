@@ -39,7 +39,6 @@ def _limpiar_flotante(valor):
         return 0.0
 
 # --- FUNCIONES DE ESTACIONES E INVENTARIOS ---
-
 def obtener_estaciones():
     response = _require_supabase().table("estaciones").select("*").execute()
     return response.data
@@ -53,7 +52,6 @@ def obtener_tanques_estaciones():
     return response.data
 
 # --- FUNCIONES DE VISTAS DE SUPABASE (Reemplazan a calculos.py) ---
-
 def obtener_vdp_ponderada_12w():
     """Obtiene la VDP ponderada calculada directamente desde la vista de Supabase."""
     try:
