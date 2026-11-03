@@ -2,6 +2,8 @@ import streamlit as st
 from servicios.database import get_supabase_client
 from modulos.inventarios import render_inventarios
 
+USUARIOS_PREDEFINIDOS = ["Brenda", "Daniela", "Jazmin", "Yesenia"]
+
 ### Configuración inicial de la página
 st.set_page_config(
     page_title="Fuel Management System (FMS)",
@@ -12,54 +14,39 @@ st.set_page_config(
 ### Obtener la instancia centralizada de Supabase
 supabase = get_supabase_client()
 
-@st.cache_data(ttl=60)
-def obtener_usuarios() -> list:
-    """Consulta y retorna una lista de usuarios únicos desde la tabla estaciones_usuario en Supabase."""
-    try:
-        res = supabase.table("estaciones_usuario").select("usuario").execute()
-        if res.data:
-            usuarios = sorted(list(set([item["usuario"] for item in res.data])))
-            return usuarios
-    except Exception as e:
-        st.error(f"Error al consultar usuarios en Supabase: {e}")
-    return []
 
 def main():
     with st.sidebar:
         st.title("Fuel Management System")
-    
-        # Obtener usuarios desde la base de datos de manera dinámica
-        lista_usuarios = obtener_usuarios()
-        
-        if lista_usuarios:
-            usuario_actual = st.selectbox("Usuario:", options=lista_usuarios)
-        else:
-            usuario_actual = st.text_input("Usuario:", value="Programador")
-            st.warning("No se encontraron registros de usuarios en la base de datos.")
-        
+
+        usuario_actual = st.selectbox(
+            "Usuario:",
+            options=USUARIOS_PREDEFINIDOS,
+            index=0,
+            key="usuario_activo_fms"
+        )
+
         st.markdown("---")
-        
-        # Menú de navegación nativo
+
         selected = st.radio(
             "Menú Principal",
             options=["Inventarios", "Ventas", "Programación"],
-            index=0
+            index=0,
+            key="menu_principal_fms"
         )
-        
+
         st.markdown("---")
         st.info("Sistema de Gestión de Combustibles conectado a Supabase.")
 
-    # Enrutamiento de vistas según la selección del menú
     if selected == "Inventarios":
         render_inventarios(supabase, usuario_actual)
-        
     elif selected == "Ventas":
         st.subheader("Módulo de Ventas")
         st.info("Próximamente: Registro y control histórico de ventas.")
-        
     elif selected == "Programación":
         st.subheader("Módulo de Programación")
         st.info("Próximamente: Planificación de cargas y abastecimientos.")
+
 
 if __name__ == "__main__":
     main()
