@@ -76,7 +76,7 @@ class ValidadorInventario:
                 registros_a_guardar.append({
                     "id_estacion": id_estacion,
                     "producto": prod,
-                    "volumen": float(volumen)
+                    "volumen": int(volumen)
                 })
                 
         return True, "Validación exitosa", registros_a_guardar
