@@ -55,6 +55,9 @@ def obtener_estaciones_usuario():
     try:
         response = _require_supabase().table("estaciones_usuario").select("*, estaciones(*)").execute()
         return response.data
+    except Exception as e:
+        print(f"Error al obtener estaciones de usuario: {e}")
+        return []
 
 # --- FUNCIONES DE VISTAS DE SUPABASE (Reemplazan a calculos.py) ---
 def obtener_vdp_ponderada_12w():
