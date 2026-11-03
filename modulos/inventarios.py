@@ -28,60 +28,58 @@ def render_inventarios(supabase_client, usuario_actual: str):
 
     # 3. Buscar registros existentes en la base de datos filtrando estrictamente por estaciones y fecha
     ids_estaciones = df_estaciones["id_estacion"].tolist()
-    
+
     res_inv = supabase_client.table("inventarios") \
         .select("id_estacion, producto, volumen") \
         .eq("fecha", str(fecha_seleccionada)) \
         .in_("id_estacion", ids_estaciones) \
         .execute()
-    
+
     df_inv = pd.DataFrame(res_inv.data)
 
-# CÓDIGO NUEVO EN modulos/inventarios.py
-# 4. Obtener productos disponibles por estación desde tanques_estaciones
-res_tanques = supabase_client.table("tanques_estaciones") \
-    .select("id_estacion, producto") \
-    .in_("id_estacion", ids_estaciones) \
-    .execute()
+    # 4. Obtener tanques/productos disponibles por estación desde tanques_estaciones
+    res_tanques = supabase_client.table("tanques_estaciones") \
+        .select("id_estacion, producto") \
+        .in_("id_estacion", ids_estaciones) \
+        .execute()
 
-tanques_por_estacion = {}
-if res_tanques.data:
-    for item in res_tanques.data:
-        est = item["id_estacion"]
-        prod = item["producto"].lower().strip()
-        if est not in tanques_por_estacion:
-            tanques_por_estacion[est] = set()
-        tanques_por_estacion[est].add(prod)
+    tanques_por_estacion = {}
+    if res_tanques.data:
+        for item in res_tanques.data:
+            est = item["id_estacion"]
+            prod = item["producto"].lower().strip()
+            if est not in tanques_por_estacion:
+                tanques_por_estacion[est] = set()
+            tanques_por_estacion[est].add(prod)
 
-# 5. Estructurar matriz: si el producto no está disponible en la estación se deja como None
-df_matriz = df_estaciones.copy()
+    # 5. Estructurar la matriz base: Asignar None si el producto no existe en tanques_estaciones
+    df_matriz = df_estaciones.copy()
 
-# Mapear datos existentes de inventarios si los hay
-df_pivot = pd.DataFrame()
-if not df_inv.empty and "producto" in df_inv.columns and "volumen" in df_inv.columns:
-    df_inv["producto"] = df_inv["producto"].astype(str).str.lower().str.strip()
-    df_pivot = df_inv.pivot(index="id_estacion", columns="producto", values="volumen")
+    df_pivot = pd.DataFrame()
+    if not df_inv.empty and "producto" in df_inv.columns and "volumen" in df_inv.columns:
+        df_inv["producto"] = df_inv["producto"].astype(str).str.lower().str.strip()
+        df_pivot = df_inv.pivot(index="id_estacion", columns="producto", values="volumen")
 
-for prod in ["regular", "premium", "diesel"]:
-    valores_columna = []
-    for _, row in df_estaciones.iterrows():
-        est_id = row["id_estacion"]
-        productos_permitidos = tanques_por_estacion.get(est_id, set())
-        
-        if prod not in productos_permitidos:
-            # Producto NO disponible en esta estación -> Celda vacía (None)
-            valores_columna.append(None)
-        else:
-            # Producto SÍ disponible
-            if not df_pivot.empty and est_id in df_pivot.index and prod in df_pivot.columns:
-                val = df_pivot.loc[est_id, prod]
-                valores_columna.append(int(val) if pd.notna(val) else 0)
+    for prod in ["regular", "premium", "diesel"]:
+        valores_columna = []
+        for _, row in df_estaciones.iterrows():
+            est_id = row["id_estacion"]
+            productos_permitidos = tanques_por_estacion.get(est_id, set())
+            
+            if prod not in productos_permitidos:
+                # Producto NO disponible en esta estación -> Mostrar vacío (None)
+                valores_columna.append(None)
             else:
-                valores_columna.append(0)
-                
-    df_matriz[prod] = valores_columna
+                # Producto disponible -> Mapear valor existente o poner 0 inicial
+                if not df_pivot.empty and est_id in df_pivot.index and prod in df_pivot.columns:
+                    val = df_pivot.loc[est_id, prod]
+                    valores_columna.append(int(val) if pd.notna(val) else 0)
+                else:
+                    valores_columna.append(0)
+                    
+        df_matriz[prod] = valores_columna
 
-    st.markdown("Modifique los valores de volumen directamente en la tabla (solo números enteros)[cite: 3]:")
+    st.markdown("Modifique los valores de volumen directamente en la tabla (solo números enteros). Las celdas vacías indican productos no disponibles:")
 
     # 6. Tabla interactiva
     df_editado = st.data_editor(
@@ -98,7 +96,7 @@ for prod in ["regular", "premium", "diesel"]:
         key=f"editor_inventarios_{usuario_actual}_{fecha_seleccionada}"
     )
 
-    # 7. Guardado eficiente procesado a través de validacion.py[cite: 3]
+    # 7. Guardado eficiente procesado a través de validacion.py
     if st.button("Guardar Cambios de Inventario", type="primary"):
         validador = ValidadorInventario(supabase_client)
         valido, mensaje, registros = validador.validar_y_normalizar(df_editado, usuario_actual)
