@@ -38,7 +38,7 @@ def _limpiar_flotante(valor):
     except (ValueError, TypeError):
         return 0.0
 
-# --- FUNCIONES DE ESTACIONES E INVENTARIOS ---
+### --- FUNCIONES DE ESTACIONES E INVENTARIOS ---
 def obtener_estaciones():
     response = _require_supabase().table("estaciones").select("*").execute()
     return response.data
@@ -52,23 +52,35 @@ def obtener_tanques_estaciones():
     return response.data
 
 def obtener_estaciones_usuario():
+    """Obtiene las asignaciones de estaciones por usuario desde Supabase."""
     try:
         response = _require_supabase().table("estaciones_usuario").select("*, estaciones(*)").execute()
-        return response.data
-    except Exception as e:
-        st.error(f"Error al obtener estaciones de usuario: {e}")
-        return []
-
-# --- FUNCIONES DE PROGRAMA DE CARGAS ---
-def obtener_programa_cargas():
-    """Obtiene el programa de cargas desde la tabla de Supabase[cite: 4]."""
-    try:
-        response = _require_supabase().table("programa_cargas").select("*").execute()
         return response.data
     except Exception:
         return []
 
-# --- FUNCIONES DE VISTAS DE SUPABASE (Reemplazan a calculos.py) ---
+def insertar_inventario(id_estacion, fecha, producto, volumen):
+    """
+    Inserta o actualiza un registro de inventario en la base de datos 
+    utilizando 'upsert' basado en la llave única (id_estacion, fecha, producto)[cite: 10].
+    """
+    client = _require_supabase()
+    
+    data = {
+        "id_estacion": str(id_estacion).strip(),
+        "fecha": str(fecha),
+        "producto": str(producto).strip().capitalize(),
+        "volumen": float(volumen)
+    }
+    
+    response = client.table("inventarios").upsert(
+        data,
+        on_conflict="id_estacion,fecha,producto"
+    ).execute()
+    
+    return response.data
+
+### --- FUNCIONES DE VISTAS DE SUPABASE ---
 def obtener_vdp_ponderada_12w():
     """Obtiene la VDP ponderada calculada directamente desde la vista de Supabase[cite: 2]."""
     try:
