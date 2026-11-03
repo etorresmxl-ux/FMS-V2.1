@@ -90,8 +90,8 @@ def render_inventarios(supabase_client, usuario_actual: str):
             "nombre": st.column_config.TextColumn("Nombre", disabled=True),
             "plaza": st.column_config.TextColumn("Plaza", disabled=True),
             "regular": st.column_config.NumberColumn("Regular", min_value=0, step=1, format="%,d"),
-            "premium": st.column_config.NumberColumn("Premium", min_value=0, step=1, format="%d"),
-            "diesel": st.column_config.NumberColumn("Diesel", min_value=0, step=1, format="%d"),
+            "premium": st.column_config.NumberColumn("Premium", min_value=0, step=1, format="%,d"),
+            "diesel": st.column_config.NumberColumn("Diesel", min_value=0, step=1, format="%,d"),
         },
         hide_index=True,
         key=f"editor_inventarios_{usuario_actual}_{fecha_seleccionada}"
