@@ -1,9 +1,9 @@
 [theme]
-primaryColor = "#3B82F6"  # Azul interactivo principal (botones y selecciones)
-backgroundColor = "#F8FAFC"  # Blanco/Gris muy claro para el fondo principal
-secondaryBackgroundColor = "#EEEEEE"  # Blanco puro para contenedores, tarjetas y barra lateral
-textColor = "#1E293B"  # Gris oscuro/azulado para un texto sumamente legible
-accentColor = "#6366F1"  # Acento secundario (púrpura/índigo)
+primaryColor = "#1B768E"
+backgroundColor = "#FCEFEF"
+secondaryBackgroundColor = "#012538"
+textColor = "#4D555B"
+accentColor = "#FB9833"
 font = "sans serif"
 
 [ui]
