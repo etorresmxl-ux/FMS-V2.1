@@ -47,13 +47,23 @@ class ValidadorInventario:
             id_estacion = row["id_estacion"]
             capacidades_estacion = capacidades_globales.get(id_estacion, {})
             
-            for prod in productos_validos:
-                if prod in row and pd.notna(row[prod]):
-                    try:
-                        # Normalización estricta a número entero
-                        volumen = int(row[prod])
-                    except ValueError:
-                        return False, f"El volumen para {prod} en la estación {id_estacion} debe ser un número entero.", []
+            # CÓDIGO NUEVO EN servicios/validacion.py
+        for prod in productos_validos:
+            val_celda = row.get(prod)
+            
+            # Si la celda está vacía (None / NaN), omitir guardado
+            if pd.isna(val_celda) or val_celda is None:
+                continue
+
+            # Verificar si el producto existe en los tanques de la estación
+            if prod not in capacidades_estacion:
+                return False, f"El producto {prod} no está disponible/configurado para la estación {id_estacion}.", []
+
+            try:
+                # Normalización estricta a número entero
+                volumen = int(val_celda)
+            except ValueError:
+                return False, f"El volumen para {prod} en la estación {id_estacion} debe ser un número entero.", []
 
                     if volumen < 0:
                         return False, f"El volumen de {prod} en la estación {id_estacion} no puede ser negativo.", []
