@@ -26,7 +26,6 @@ def obtener_usuarios() -> list:
 
 def main():
     with st.sidebar:
-        st.image("https://img.icons8.com/color/96/fuel-tank.png", width=80)
         st.title("FMS-V2.1")
     
         # Obtener usuarios desde la base de datos de manera dinámica
