@@ -26,7 +26,7 @@ def obtener_usuarios() -> list:
 
 def main():
     with st.sidebar:
-        st.title("FMS-V2.1")
+        st.title("Fuel Management System")
     
         # Obtener usuarios desde la base de datos de manera dinámica
         lista_usuarios = obtener_usuarios()
