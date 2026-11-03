@@ -56,12 +56,21 @@ def obtener_estaciones_usuario():
         response = _require_supabase().table("estaciones_usuario").select("*, estaciones(*)").execute()
         return response.data
     except Exception as e:
-        print(f"Error al obtener estaciones de usuario: {e}")
+        st.error(f"Error al obtener estaciones de usuario: {e}")
+        return []
+
+# --- FUNCIONES DE PROGRAMA DE CARGAS ---
+def obtener_programa_cargas():
+    """Obtiene el programa de cargas desde la tabla de Supabase[cite: 4]."""
+    try:
+        response = _require_supabase().table("programa_cargas").select("*").execute()
+        return response.data
+    except Exception:
         return []
 
 # --- FUNCIONES DE VISTAS DE SUPABASE (Reemplazan a calculos.py) ---
 def obtener_vdp_ponderada_12w():
-    """Obtiene la VDP ponderada calculada directamente desde la vista de Supabase."""
+    """Obtiene la VDP ponderada calculada directamente desde la vista de Supabase[cite: 2]."""
     try:
         response = _require_supabase().table("vdp_ponderada_12w").select("*").execute()
         return response.data
@@ -69,7 +78,7 @@ def obtener_vdp_ponderada_12w():
         return []
 
 def obtener_factor_venta_diasemanal():
-    """Obtiene los factores de venta por día de la semana desde la vista de Supabase."""
+    """Obtiene los factores de venta por día de la semana desde la vista de Supabase[cite: 2]."""
     try:
         response = _require_supabase().table("factor_venta_diasemanal").select("*").execute()
         return response.data
