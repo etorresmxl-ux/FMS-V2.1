@@ -47,38 +47,36 @@ class ValidadorInventario:
             id_estacion = row["id_estacion"]
             capacidades_estacion = capacidades_globales.get(id_estacion, {})
             
-            # CÓDIGO NUEVO EN servicios/validacion.py
-        for prod in productos_validos:
-            val_celda = row.get(prod)
-            
-            # Si la celda está vacía (None / NaN), omitir guardado
-            if pd.isna(val_celda) or val_celda is None:
-                continue
+            for prod in productos_validos:
+                val_celda = row.get(prod)
 
-            # Verificar si el producto existe en los tanques de la estación
-            if prod not in capacidades_estacion:
-                return False, f"El producto {prod} no está disponible/configurado para la estación {id_estacion}.", []
+                # Si la celda está vacía (None / NaN), omitir lectura y escritura
+                if pd.isna(val_celda) or val_celda is None:
+                    continue
 
-            try:
-                # Normalización estricta a número entero
-                volumen = int(val_celda)
-            except ValueError:
-                return False, f"El volumen para {prod} en la estación {id_estacion} debe ser un número entero.", []
+                # Anular la escritura si el producto no está configurado en tanques_estaciones
+                if prod not in capacidades_estacion:
+                    return False, f"El producto '{prod}' no está disponible en la estación {id_estacion}.", []
 
-                    if volumen < 0:
-                        return False, f"El volumen de {prod} en la estación {id_estacion} no puede ser negativo.", []
+                try:
+                    # Normalización estricta a número entero
+                    volumen = int(val_celda)
+                except (ValueError, TypeError):
+                    return False, f"El volumen para {prod} en la estación {id_estacion} debe ser un número entero.", []
 
-                    # Validar límites del tanque si están configurados en Supabase
-                    if prod in capacidades_estacion:
-                        limite_max = capacidades_estacion[prod].get("limite_max")
-                        if limite_max is not None and volumen > limite_max:
-                            return False, f"El volumen ({volumen}) de {prod} en la estación {id_estacion} supera el límite máximo permitido ({limite_max}).", []
+                if volumen < 0:
+                    return False, f"El volumen de {prod} en la estación {id_estacion} no puede ser negativo.", []
 
-                    # Datos normalizados listos para la salida hacia la BD
-                    registros_a_guardar.append({
-                        "id_estacion": id_estacion,
-                        "producto": prod,
-                        "volumen": float(volumen)
-                    })
-                    
+                # Validar límites del tanque si están configurados en Supabase
+                limite_max = capacidades_estacion[prod].get("limite_max")
+                if limite_max is not None and volumen > limite_max:
+                    return False, f"El volumen ({volumen}) de {prod} en la estación {id_estacion} supera el límite máximo permitido ({limite_max}).", []
+
+                # Datos normalizados listos para la salida hacia la BD
+                registros_a_guardar.append({
+                    "id_estacion": id_estacion,
+                    "producto": prod,
+                    "volumen": float(volumen)
+                })
+                
         return True, "Validación exitosa", registros_a_guardar
