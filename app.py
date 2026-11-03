@@ -13,15 +13,37 @@ st.set_page_config(
 # Obtener la instancia centralizada de Supabase
 supabase = get_supabase_client()
 
+@st.cache_data(ttl=60)
+def obtener_usuarios() -> list:
+    """Consulta y retorna una lista de usuarios únicos desde la tabla estaciones_usuarios en Supabase."""
+    try:
+        res = supabase.table("estaciones_usuarios").select("usuario").execute()
+        if res.data:
+            # Extraer usuarios únicos y ordenarlos alfabéticamente
+            usuarios = sorted(list(set([item["usuario"] for item in res.data])))
+            return usuarios
+    except Exception as e:
+        st.error(f"Error al consultar usuarios en Supabase: {e}")
+    return []
+
 def main():
     with st.sidebar:
         st.image("https://img.icons8.com/color/96/fuel-tank.png", width=80)
         st.title("FMS-V2.1")
         
-        usuario_actual = st.text_input("Usuario actual", value="operador_principal")
+        # Obtener usuarios desde la tabla estaciones_usuarios
+        lista_usuarios = obtener_usuarios()
+        
+        if lista_usuarios:
+            usuario_actual = st.selectbox("Usuario actual", options=lista_usuarios)
+        else:
+            # Fallback en caso de que la tabla esté vacía o ocurra un error
+            usuario_actual = st.text_input("Usuario actual", value="operador_principal")
+            st.warning("No se encontraron registros en la tabla estaciones_usuarios.")
         
         st.markdown("---")
         
+        # Menú de navegación principal con los módulos definidos
         selected = option_menu(
             menu_title="Menú Principal",
             options=["Inventarios", "Ventas", "Programación"],
@@ -33,11 +55,14 @@ def main():
         st.markdown("---")
         st.info("Sistema de Gestión de Combustibles conectado a Supabase.")
 
+    # Enrutamiento de vistas según la selección del menú
     if selected == "Inventarios":
         render_inventarios(supabase, usuario_actual)
+        
     elif selected == "Ventas":
         st.subheader("Módulo de Ventas")
         st.info("Próximamente: Registro y control histórico de ventas.")
+        
     elif selected == "Programación":
         st.subheader("Módulo de Programación")
         st.info("Próximamente: Planificación de cargas y abastecimientos.")
