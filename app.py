@@ -2,20 +2,17 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import database as db
-from servicios import calculos
 from modulos import importador, inventarios, proyecciones
 from streamlit_option_menu import option_menu
 
-### Configuración inicial de la página
+# CONFIGURACIÓN INICIAL DE LA PÁGINA
 st.set_page_config(
     page_title="Sistema de Gestión de Combustible",
     page_icon="⛽",
     layout="wide"
 )
 
-### ---------------------------------------------------------
-### MENÚ LATERAL DE NAVEGACIÓN
-### ---------------------------------------------------------
+# MENÚ LATERAL DE NAVEGACIÓN
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/gas-station.png", width=80)
     st.title("Fuel Management System")
@@ -27,15 +24,7 @@ with st.sidebar:
         default_index=0,
     )
 
-### ---------------------------------------------------------
-### CARGA GLOBAL AL INICIAR LA PÁGINA
-### ---------------------------------------------------------
-with st.spinner("Cargando y procesando modelos de consumo (12 semanas)..."):
-    df_ponderados = calculos.obtener_calculos_combustible()
-
-### ---------------------------------------------------------
-### SECCIÓN DE ENRUTAMIENTO
-### ---------------------------------------------------------
+# SECCIÓN DE ENRUTAMIENTO
 if menu == "Inventarios":
     inventarios.mostrar_inventarios()
 elif menu == "Proyecciones":
