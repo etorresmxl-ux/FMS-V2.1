@@ -4,7 +4,9 @@ from datetime import date, timedelta
 import database as db
 
 def formatear_fecha_corta(f):
-    return f.strftime("%d/%m")
+    dias = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+    meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+    return f"{dias[f.weekday()]} {f.strftime('%d')}-{meses[f.month - 1]}"
 
 def obtener_programa_cargas():
     """Obtiene el programa de cargas desde la tabla de Supabase."""
@@ -274,8 +276,15 @@ def mostrar_programacion():
         for col in [c for c in df_proyeccion.columns if c != "Concepto"]:
             column_config[col] = st.column_config.TextColumn(col, width="small")
 
+        # Aplicar alineación: izquierda para 'Concepto', derecha para el resto de columnas
+        df_styled = df_proyeccion.style.set_properties(
+            subset=["Concepto"], **{"text-align": "left"}
+        ).set_properties(
+            subset=[c for c in df_proyeccion.columns if c != "Concepto"], **{"text-align": "right"}
+        )
+
         st.dataframe(
-            df_proyeccion,
+            df_styled,
             use_container_width=True,
             hide_index=True,
             column_config=column_config
