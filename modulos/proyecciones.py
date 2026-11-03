@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 import database as db
-from servicios import calculos
 
 def formatear_fecha_corta(f):
     return f.strftime("%d/%m")
@@ -41,8 +40,12 @@ def mostrar_proyecciones():
     if not id_estacion_sel:
         return
 
-    df_factores = calculos.obtener_factores_estacionalidad_dia()
-    df_ponderados = calculos.obtener_calculos_combustible()
+    # Obtención de datos directamente desde las vistas de Supabase
+    datos_factores = db.obtener_factor_venta_diasemanal()
+    datos_ponderados = db.obtener_vdp_ponderada_12w()
+
+    df_factores = pd.DataFrame(datos_factores) if datos_factores else pd.DataFrame()
+    df_ponderados = pd.DataFrame(datos_ponderados) if datos_ponderados else pd.DataFrame()
 
     if not df_factores.empty and "dia_de_la_semana" in df_factores.columns:
         df_factores["dia_index"] = pd.to_numeric(df_factores["dia_de_la_semana"], errors="coerce")
