@@ -9,6 +9,7 @@ def formatear_fecha_corta(f):
 def mostrar_proyecciones():
     st.header("📈 Proyección e Integridad de Inventarios (14 Días)")
 
+    # 1. Filtros de Plaza y Estación
     datos_estaciones = db.obtener_estaciones()
     if not datos_estaciones:
         st.warning("No hay estaciones registradas en la base de datos.")
@@ -40,49 +41,54 @@ def mostrar_proyecciones():
     if not id_estacion_sel:
         return
 
-    # Obtención de datos directamente desde las vistas de Supabase
+    id_estacion_str = str(id_estacion_sel).strip()
+
+    # 2. Carga de información desde base de datos
     datos_factores = db.obtener_factor_venta_diasemanal()
     datos_ponderados = db.obtener_vdp_ponderada_12w()
+    datos_inventarios = db.obtener_inventarios()
+    datos_tanques = db.obtener_tanques_estaciones()
 
     df_factores = pd.DataFrame(datos_factores) if datos_factores else pd.DataFrame()
     df_ponderados = pd.DataFrame(datos_ponderados) if datos_ponderados else pd.DataFrame()
+    df_inv_hoy = pd.DataFrame(datos_inventarios) if datos_inventarios else pd.DataFrame()
+    df_tanques = pd.DataFrame(datos_tanques) if datos_tanques else pd.DataFrame()
 
-    if not df_factores.empty and "dia_de_la_semana" in df_factores.columns:
-        df_factores["dia_index"] = pd.to_numeric(df_factores["dia_de_la_semana"], errors="coerce")
+    # Normalización de datos
+    if not df_factores.empty:
         df_factores["id_estacion"] = df_factores["id_estacion"].astype(str).str.strip()
         df_factores["producto"] = df_factores["producto"].astype(str).str.strip().str.capitalize()
+        if "dia_de_la_semana" in df_factores.columns:
+            df_factores["dia_index"] = pd.to_numeric(df_factores["dia_de_la_semana"], errors="coerce")
 
     if not df_ponderados.empty:
         df_ponderados["id_estacion"] = df_ponderados["id_estacion"].astype(str).str.strip()
         df_ponderados["producto"] = df_ponderados["producto"].astype(str).str.strip().str.capitalize()
 
-    df_inv_hoy = db.obtener_inventarios()
-
-    if df_inv_hoy:
-        df_inv_hoy = pd.DataFrame(df_inv_hoy)
+    if not df_inv_hoy.empty:
+        df_inv_hoy["id_estacion"] = df_inv_hoy["id_estacion"].astype(str).str.strip()
+        df_inv_hoy["producto"] = df_inv_hoy["producto"].astype(str).str.strip().str.capitalize()
         if "fecha" in df_inv_hoy.columns:
             df_inv_hoy["fecha"] = pd.to_datetime(df_inv_hoy["fecha"]).dt.date
-        if "producto" in df_inv_hoy.columns:
-            df_inv_hoy["producto"] = df_inv_hoy["producto"].astype(str).str.strip().str.capitalize()
-        if "id_estacion" in df_inv_hoy.columns:
-            df_inv_hoy["id_estacion"] = df_inv_hoy["id_estacion"].astype(str).str.strip()
-    else:
-        df_inv_hoy = pd.DataFrame()
 
-    datos_tanques = db.obtener_tanques_estaciones()
-    if datos_tanques:
-        df_tanques = pd.DataFrame(datos_tanques)
-        if "producto" in df_tanques.columns:
-            df_tanques["producto"] = df_tanques["producto"].astype(str).str.strip().str.capitalize()
-        if "id_estacion" in df_tanques.columns:
-            df_tanques["id_estacion"] = df_tanques["id_estacion"].astype(str).str.strip()
+    if not df_tanques.empty:
+        df_tanques["id_estacion"] = df_tanques["id_estacion"].astype(str).str.strip()
+        df_tanques["producto"] = df_tanques["producto"].astype(str).str.strip().str.capitalize()
+
+    # 3. Filtrar los productos disponibles únicamente para la estación seleccionada
+    if not df_tanques.empty and "id_estacion" in df_tanques.columns:
+        productos_disponibles = df_tanques[df_tanques["id_estacion"] == id_estacion_str]["producto"].dropna().unique().tolist()
     else:
-        df_tanques = pd.DataFrame()
+        productos_disponibles = ["Regular", "Premium", "Diesel"]
+
+    if not productos_disponibles:
+        st.info("No hay productos o tanques registrados para esta estación.")
+        return
 
     fecha_hoy = date.today()
-    productos = ["Regular", "Premium", "Diesel"]
 
-    for producto in productos:
+    # 4. Renderizado y Cálculo de matrices por Producto
+    for producto in productos_disponibles:
         if producto == "Regular":
             color_Hex = "#2e7d32"
         elif producto == "Premium":
@@ -92,80 +98,53 @@ def mostrar_proyecciones():
 
         st.markdown(f"<h3 style='color: {color_Hex};'>⛽ {producto}</h3>", unsafe_allow_html=True)
 
+        # Obtener capacidad máxima y límite mínimo de la estación/producto
+        limite_max_val = 0.0
         limite_min_val = 0.0
-        if not df_tanques.empty and "id_estacion" in df_tanques.columns and "producto" in df_tanques.columns and "limite_min" in df_tanques.columns:
+        if not df_tanques.empty:
             match_tanque = df_tanques[
-                (df_tanques["id_estacion"] == str(id_estacion_sel).strip()) & 
+                (df_tanques["id_estacion"] == id_estacion_str) & 
                 (df_tanques["producto"] == producto)
             ]
-            if not match_tanque.empty and pd.notna(match_tanque["limite_min"].values[0]):
-                limite_min_val = float(match_tanque["limite_min"].values[0])
+            if not match_tanque.empty:
+                if "limite_max" in match_tanque.columns and pd.notna(match_tanque["limite_max"].values[0]):
+                    limite_max_val = float(match_tanque["limite_max"].values[0])
+                elif "capacidad" in match_tanque.columns and pd.notna(match_tanque["capacidad"].values[0]):
+                    limite_max_val = float(match_tanque["capacidad"].values[0])
 
-        vdp_base = 0.0
+                if "limite_min" in match_tanque.columns and pd.notna(match_tanque["limite_min"].values[0]):
+                    limite_min_val = float(match_tanque["limite_min"].values[0])
+
+        # Obtener VDP Ponderada de 12 semanas
+        vdp_ponderada = 0.0
         if not df_ponderados.empty:
             match_pond = df_ponderados[
-                (df_ponderados["id_estacion"] == str(id_estacion_sel).strip()) &
+                (df_ponderados["id_estacion"] == id_estacion_str) &
                 (df_ponderados["producto"] == producto)
             ]
             if not match_pond.empty and "vdp_ponderada" in match_pond.columns:
-                vdp_base = float(match_pond["vdp_ponderada"].values[0])
+                vdp_ponderada = float(match_pond["vdp_ponderada"].values[0])
 
-        # --- LÓGICA DE INVENTARIO INICIAL Y PROYECCIÓN HASTA HOY ---
+        # Obtener Inventario Inicial del día
         inv_inicial_hoy = 0.0
-        if not df_inv_hoy.empty and "id_estacion" in df_inv_hoy.columns and "producto" in df_inv_hoy.columns:
+        if not df_inv_hoy.empty:
             df_inv_est_prod = df_inv_hoy[
-                (df_inv_hoy["id_estacion"] == str(id_estacion_sel).strip()) &
+                (df_inv_hoy["id_estacion"] == id_estacion_str) &
                 (df_inv_hoy["producto"] == producto)
-            ].copy()
-            
+            ]
             if not df_inv_est_prod.empty:
                 match_hoy = df_inv_est_prod[df_inv_est_prod["fecha"] == fecha_hoy]
                 if not match_hoy.empty:
                     inv_inicial_hoy = float(match_hoy["volumen"].values[0])
                 else:
-                    df_anteriores = df_inv_est_prod[df_inv_est_prod["fecha"] < fecha_hoy]
+                    df_anteriores = df_inv_est_prod[df_inv_est_prod["fecha"] < fecha_hoy].sort_values(by="fecha", ascending=False)
                     if not df_anteriores.empty:
-                        df_anteriores = df_anteriores.sort_values(by="fecha", ascending=False)
-                        ultima_fecha = df_anteriores["fecha"].values[0]
-                        volumen_ultimo = float(df_anteriores["volumen"].values[0])
-                        
-                        inv_actual_proyectado = volumen_ultimo
-                        current_date = ultima_fecha
-                        
-                        while current_date < fecha_hoy:
-                            venta_dia_intermedio = 0.0
-                            encontro_venta = False
-                            
-                            if not df_factores.empty:
-                                mask_f = (
-                                    (df_factores["id_estacion"] == str(id_estacion_sel).strip()) &
-                                    (df_factores["producto"] == producto)
-                                )
-                                if "dia_index" in df_factores.columns:
-                                    match_v = df_factores[mask_f & (df_factores["dia_index"] == current_date.isoweekday())]
-                                    if not match_v.empty:
-                                        for col_val in ["vp_dia", "vdp_ponderada", "volumen"]:
-                                            if col_val in match_v.columns and pd.notna(match_v[col_val].values[0]):
-                                                val = float(match_v[col_val].values[0])
-                                                if val > 0:
-                                                    venta_dia_intermedio = val
-                                                    encontro_venta = True
-                                                    break
-                            
-                            if not encontro_venta and vdp_base > 0:
-                                venta_dia_intermedio = vdp_base
-                            
-                            if inv_actual_proyectado - venta_dia_intermedio < limite_min_val:
-                                venta_dia_intermedio = max(0.0, inv_actual_proyectado - limite_min_val)
+                        inv_inicial_hoy = float(df_anteriores["volumen"].values[0])
 
-                            inv_actual_proyectado -= venta_dia_intermedio
-                            current_date += timedelta(days=1)
-                        
-                        inv_inicial_hoy = inv_actual_proyectado
-
-        # --- CICLO DE PROYECCIÓN DE LOS 14 DÍAS ---
+        # Ciclo de proyección a 14 Días
         fechas_cols = []
         inv_iniciales = []
+        por_llenar_list = []
         ventas_est = []
         inv_finales = []
         dias_inventario = []
@@ -177,57 +156,62 @@ def mostrar_proyecciones():
             fecha_fmt = formatear_fecha_corta(fecha_dia)
             fechas_cols.append(fecha_fmt)
 
-            venta_estimada_dia = 0.0
-            encontro_venta = False
+            # Cálculo de factor del día de la semana (1 = Lunes, ..., 7 = Domingo)
+            dia_semana_iso = fecha_dia.isoweekday()
+            factor_dia = 1.0
 
             if not df_factores.empty:
-                mask = (
-                    (df_factores["id_estacion"].astype(str).str.strip() == str(id_estacion_sel).strip()) &
-                    (df_factores["producto"] == producto)
-                )
+                match_factor = df_factores[
+                    (df_factores["id_estacion"] == id_estacion_str) &
+                    (df_factores["producto"] == producto) &
+                    (df_factores["dia_index"] == dia_semana_iso)
+                ]
+                if not match_factor.empty:
+                    for col_factor in ["factor_venta_diasemanal", "factor", "vp_dia"]:
+                        if col_factor in match_factor.columns and pd.notna(match_factor[col_factor].values[0]):
+                            factor_dia = float(match_factor[col_factor].values[0])
+                            break
 
-                if "dia_index" in df_factores.columns:
-                    match_venta = df_factores[mask & (df_factores["dia_index"] == fecha_dia.isoweekday())]
-                    if not match_venta.empty:
-                        for col_val in ["vp_dia", "vdp_ponderada", "volumen"]:
-                            if col_val in match_venta.columns and pd.notna(match_venta[col_val].values[0]):
-                                val = float(match_venta[col_val].values[0])
-                                if val > 0:
-                                    venta_estimada_dia = val
-                                    encontro_venta = True
-                                    break
-
-            if not encontro_venta and vdp_base > 0:
-                venta_estimada_dia = vdp_base
-
+            # 1. Inventario Inicial
             inv_inicial = inv_actual
-            
-            if inv_inicial <= limite_min_val:
-                venta_estimada_dia = 0.0
-                inv_final = inv_inicial
-            else:
-                inv_final_prov = inv_inicial - venta_estimada_dia
-                if inv_final_prov < limite_min_val:
-                    venta_estimada_dia = max(0.0, inv_inicial - limite_min_val)
-                    inv_final = limite_min_val
-                else:
-                    inv_final = inv_final_prov
 
-            ds = (inv_final / venta_estimada_dia) if venta_estimada_dia > 0 else 0.0
+            # 2. Por llenar = (limite_max - inventario actual)
+            por_llenar = max(0.0, limite_max_val - inv_inicial) if limite_max_val > 0 else 0.0
 
+            # 3. Venta estimada = (vdp_ponderada * factor_venta_diasemanal)
+            venta_estimada = vdp_ponderada * factor_dia
+
+            # 4. Inventario final = (inventario inicial - venta estimada)
+            inv_final = inv_inicial - venta_estimada
+
+            # 5. D/S = (inventario final / vdp_ponderada)
+            ds = (inv_final / vdp_ponderada) if vdp_ponderada > 0 else 0.0
+
+            # Guardar resultados
             inv_iniciales.append(round(inv_inicial, 2))
-            ventas_est.append(round(venta_estimada_dia, 2))
+            por_llenar_list.append(round(por_llenar, 2))
+            ventas_est.append(round(venta_estimada, 2))
             inv_finales.append(round(inv_final, 2))
             dias_inventario.append(round(ds, 1))
 
+            # El inventario final de hoy pasa a ser el inicial de mañana
             inv_actual = inv_final
 
+        # Construcción del DataFrame para mostrar en Streamlit
         data_dict = {
-            "Concepto": ["Inventario Inicial", "Venta Estimada", "Inventario Final", "D/S"]
+            "Concepto": [
+                "Inventario Inicial",
+                "Por Llenar",
+                "Venta Estimada",
+                "Inventario Final",
+                "D/S"
+            ]
         }
+
         for idx, fecha_fmt in enumerate(fechas_cols):
             data_dict[fecha_fmt] = [
                 inv_iniciales[idx],
+                por_llenar_list[idx],
                 ventas_est[idx],
                 inv_finales[idx],
                 dias_inventario[idx]
@@ -235,12 +219,14 @@ def mostrar_proyecciones():
 
         df_proyeccion = pd.DataFrame(data_dict)
 
+        # Formatear números (enteros formateados con comas para volúmenes, decimales para D/S)
         for col in df_proyeccion.columns:
             if col != "Concepto":
                 df_proyeccion[col] = df_proyeccion.apply(
                     lambda row, c=col: (
-                        f"{int(round(float(row[c]))):,}" if row["Concepto"] in ["Inventario Inicial", "Venta Estimada", "Inventario Final"]
-                        else f"{float(row[c]):.1f}"
+                        f"{int(round(float(row[c]))):,}" if row["Concepto"] in [
+                            "Inventario Inicial", "Por Llenar", "Venta Estimada", "Inventario Final"
+                        ] else f"{float(row[c]):.1f}"
                     ),
                     axis=1
                 )
