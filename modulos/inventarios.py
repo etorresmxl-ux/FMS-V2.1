@@ -9,10 +9,10 @@ def render_inventarios(supabase_client, usuario_actual: str):
     # 1. Filtro por fecha
     fecha_seleccionada = st.date_input("Seleccione la fecha de inventario", value=date.today())
 
-    # 2. Obtener estaciones permitidas para el usuario
+    # 2. Obtener estaciones permitidas para el usuario actual desde Supabase
     @st.cache_data(ttl=60)
     def cargar_estaciones_usuario(usuario):
-        # Relación de estaciones por usuario
+        # Consultar la relación de estaciones por usuario
         res_usr = supabase_client.table("estaciones_usuario").select("id_estacion").eq("usuario", usuario).execute()
         ids = [item["id_estacion"] for item in res_usr.data]
         if not ids:
@@ -27,16 +27,24 @@ def render_inventarios(supabase_client, usuario_actual: str):
         st.warning("No tienes estaciones asignadas o registradas en el sistema.")
         return
 
-    # 3. Obtener inventarios existentes para la fecha seleccionada
-    res_inv = supabase_client.table("inventarios").select("id_estacion, producto, volumen").eq("fecha", str(fecha_seleccionada)).execute()
+    # 3. Buscar registros existentes en la tabla 'inventarios' para las estaciones del usuario y la fecha seleccionada
+    ids_estaciones = df_estaciones["id_estacion"].tolist()
+    
+    res_inv = supabase_client.table("inventarios") \
+        .select("id_estacion, producto, volumen") \
+        .eq("fecha", str(fecha_seleccionada)) \
+        .in_("id_estacion", ids_estaciones) \
+        .execute()
+    
     df_inv = pd.DataFrame(res_inv.data)
 
-    # Pivotes para estructurar la tabla: id_estacion, nombre, plaza, regular, premium, diesel
+    # 4. Estructurar la matriz combinando estaciones y productos (regular, premium, diesel)
     df_matriz = df_estaciones.copy()
     for prod in ["regular", "premium", "diesel"]:
         df_matriz[prod] = 0
 
-    if not df_inv.empty:
+    if not df_inv.empty and "producto" in df_inv.columns and "volumen" in df_inv.columns:
+        # Pivotar los datos existentes para que coincidan con las columnas de productos
         df_pivot = df_inv.pivot(index="id_estacion", columns="producto", values="volumen").reset_index()
         for prod in ["regular", "premium", "diesel"]:
             if prod in df_pivot.columns:
@@ -46,7 +54,7 @@ def render_inventarios(supabase_client, usuario_actual: str):
 
     st.markdown("Modifique los valores de volumen directamente en la tabla (solo números enteros):")
 
-    # 4. Tabla interactiva con columnas de producto editables
+    # 5. Tabla interactiva con columnas de producto editables
     df_editado = st.data_editor(
         df_matriz,
         column_config={
@@ -58,10 +66,10 @@ def render_inventarios(supabase_client, usuario_actual: str):
             "diesel": st.column_config.NumberColumn("Diesel", min_value=0, step=1, format="%d"),
         },
         hide_index=True,
-        key=f"editor_inventarios_{fecha_seleccionada}"
+        key=f"editor_inventarios_{usuario_actual}_{fecha_seleccionada}"
     )
 
-    # 5. Botón de guardado y procesamiento mediante el servicio de validación
+    # 6. Botón de guardado y procesamiento mediante el servicio de validación
     if st.button("Guardar Cambios de Inventario", type="primary"):
         validador = ValidadorInventario(supabase_client)
         valido, mensaje, registros = validador.validar_y_normalizar(df_editado, usuario_actual)
@@ -69,7 +77,7 @@ def render_inventarios(supabase_client, usuario_actual: str):
         if not valido:
             st.error(mensaje)
         else:
-            # Procesar upsert en Supabase para cada registro de la fecha
+            # Procesar upsert en Supabase asegurando la combinación única (id_estacion, fecha, producto)
             exito = True
             for reg in registros:
                 reg["fecha"] = str(fecha_seleccionada)
