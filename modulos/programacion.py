@@ -1,313 +1,167 @@
 from datetime import date, timedelta
+
 import pandas as pd
 import streamlit as st
+
 import database as db
 
-def formatear_fecha_corta(f):
+PRODUCTOS = ["Regular", "Premium", "Diesel"]
+FACTORES = ["factor", "factor_venta_diasemanal", "factor_estacionalidad"]
+
+
+def formatear_fecha_corta(fecha):
     dias = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
     meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
-    return f"{dias[f.weekday()]} {f.strftime('%d')}-{meses[f.month - 1]}"
+    return f"{dias[fecha.weekday()]} {fecha:%d}-{meses[fecha.month - 1]}"
 
-def obtener_programa_cargas():
-    """Obtiene el programa de cargas desde la tabla de Supabase."""
+
+def _numero(valor, default=0.0):
     try:
-        response = db._require_supabase().table("programa_cargas").select("*").execute()
-        return response.data
-    except Exception:
-        return []
+        numero = float(valor)
+        return numero if pd.notna(numero) and numero not in (float("inf"), float("-inf")) else default
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def _normalizar_catalogo(df):
+    if df.empty:
+        return df
+    if "id_estacion" in df:
+        df["id_estacion"] = df["id_estacion"].astype(str).str.strip()
+    if "producto" in df:
+        df["producto"] = df["producto"].astype(str).str.strip().str.capitalize()
+    return df
+
+
+def _factor_del_dia(df, estacion, producto, fecha):
+    if df.empty or "dia_index" not in df:
+        return 1.0
+    match = df[(df["id_estacion"] == estacion) & (df["producto"] == producto) & (df["dia_index"] == fecha.isoweekday())]
+    if match.empty:
+        return 1.0
+    for columna in FACTORES:
+        if columna in match and pd.notna(match.iloc[0][columna]):
+            return max(0.0, _numero(match.iloc[0][columna], 1.0))
+    return 1.0
+
+
+def _valor_carga(df, estacion, producto, fecha):
+    if df.empty:
+        return 0
+    filas = df[(df["id_estacion"] == estacion) & (df["producto"] == producto) & (df["fecha"] == fecha)]
+    return db.validar_numero_entero(filas.iloc[0]["volumen"], "carga programada", minimo=0) if not filas.empty else 0
+
 
 def mostrar_programacion():
     st.header("🚚 Programación de Cargas")
-
-    # 1. Carga de asignaciones de estaciones por usuario
-    datos_estaciones_usuario = db.obtener_estaciones_usuario()
-    if not datos_estaciones_usuario:
+    asignaciones = db.obtener_estaciones_usuario()
+    if not asignaciones:
         st.warning("No hay asignaciones de estaciones y usuarios registradas en la base de datos.")
         return
+    df_asignaciones = pd.DataFrame(asignaciones)
+    if "estaciones" in df_asignaciones:
+        relacionadas = df_asignaciones["estaciones"]
+        df_asignaciones["nombre"] = relacionadas.apply(lambda x: x.get("nombre", "") if isinstance(x, dict) else "")
+        df_asignaciones["id_estacion"] = relacionadas.apply(lambda x: str(x.get("id_estacion", "")) if isinstance(x, dict) else "")
+    usuarios = sorted(df_asignaciones["usuario"].dropna().unique())
+    if not usuarios:
+        st.warning("No hay usuarios disponibles.")
+        return
+    c_usuario, c_estacion = st.columns(2)
+    with c_usuario:
+        usuario = st.selectbox("Selecciona el usuario:", usuarios, key="filtro_usuario_programacion")
+    asignadas = df_asignaciones[df_asignaciones["usuario"] == usuario].copy()
+    if asignadas.empty:
+        st.info("No hay estaciones para el usuario seleccionado.")
+        return
+    estaciones = dict(zip(asignadas["id_estacion"].astype(str).str.strip(), asignadas.get("nombre", "")))
+    with c_estacion:
+        estacion = st.selectbox("Selecciona la Estación:", list(estaciones), format_func=lambda x: f"{x} - {estaciones.get(x, '')}", key="filtro_estacion_programacion")
+    estacion = str(estacion).strip()
 
-    df_est_usu = pd.DataFrame(datos_estaciones_usuario)
-
-    # Normalizar columnas si vienen anidadas en un diccionario desde Supabase
-    if "estaciones" in df_est_usu.columns:
-        df_est_usu["nombre"] = df_est_usu["estaciones"].apply(
-            lambda x: x.get("nombre") if isinstance(x, dict) else ""
-        )
-        df_est_usu["plaza"] = df_est_usu["estaciones"].apply(
-            lambda x: x.get("plaza") if isinstance(x, dict) else ""
-        )
-        df_est_usu["id_estacion"] = df_est_usu["estaciones"].apply(
-            lambda x: str(x.get("id_estacion")) if isinstance(x, dict) and x.get("id_estacion") is not None else df_est_usu.get("id_estacion")
-        )
-
-    # Selectores en columnas: Usuario y Estación
-    col_usuario, col_espacio = st.columns(2)
-
-    with col_usuario:
-        usuarios_disponibles = sorted(list(df_est_usu["usuario"].dropna().unique()))
-        usuario_seleccionado = st.selectbox(
-            "Selecciona el usuario:",
-            options=usuarios_disponibles,
-            key="filtro_usuario_programacion"
-        )
-
-    df_estaciones_filtradas = df_est_usu[df_est_usu["usuario"] == usuario_seleccionado].copy()
-
-    if df_estaciones_filtradas.empty:
-        st.info("No hay estaciones registradas para el usuario seleccionado.")
+    factores = _normalizar_catalogo(pd.DataFrame(db.obtener_factor_venta_diasemanal() or []))
+    ponderados = _normalizar_catalogo(pd.DataFrame(db.obtener_vdp_ponderada_12w() or []))
+    cargas = _normalizar_catalogo(pd.DataFrame(db.obtener_programa_cargas() or []))
+    inventarios = _normalizar_catalogo(pd.DataFrame(db.obtener_inventarios() or []))
+    tanques = _normalizar_catalogo(pd.DataFrame(db.obtener_tanques_estaciones() or []))
+    if tanques.empty:
+        st.warning("No hay tanques configurados; la captura de cargas está deshabilitada.")
+        return
+    permitidos = set(tanques.loc[tanques["id_estacion"] == estacion, "producto"].dropna())
+    productos = [p for p in PRODUCTOS if p in permitidos]
+    if not productos:
+        st.info("Esta estación no tiene productos/tanques habilitados para programar cargas.")
         return
 
-    with col_espacio:
-        estaciones_dict = dict(zip(df_estaciones_filtradas["id_estacion"], df_estaciones_filtradas["nombre"]))
-        id_estacion_sel = st.selectbox(
-            "Selecciona la Estación:",
-            options=list(estaciones_dict.keys()),
-            format_func=lambda x: f"{x} - {estaciones_dict.get(x, '')}",
-            key="filtro_estacion_programacion"
-        )
+    if not factores.empty:
+        dia_col = "diasemanal" if "diasemanal" in factores else "dia_de_la_semana" if "dia_de_la_semana" in factores else None
+        if dia_col:
+            factores["dia_index"] = pd.to_numeric(factores[dia_col], errors="coerce")
+    for df in (cargas, inventarios):
+        if not df.empty and "fecha" in df:
+            df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce").dt.date
+    if not cargas.empty and "volumen" in cargas:
+        cargas["volumen"] = pd.to_numeric(cargas["volumen"], errors="coerce")
 
-    if not id_estacion_sel:
-        return
-
-    id_estacion_str = str(id_estacion_sel).strip()
-
-    # Obtención de datos directamente desde las vistas y tablas de Supabase
-    datos_factores = db.obtener_factor_venta_diasemanal()
-    datos_ponderados = db.obtener_vdp_ponderada_12w()
-    datos_cargas = obtener_programa_cargas()
-
-    df_factores = pd.DataFrame(datos_factores) if datos_factores else pd.DataFrame()
-    df_ponderados = pd.DataFrame(datos_ponderados) if datos_ponderados else pd.DataFrame()
-    df_cargas = pd.DataFrame(datos_cargas) if datos_cargas else pd.DataFrame()
-
-    if not df_factores.empty:
-        df_factores["id_estacion"] = df_factores["id_estacion"].astype(str).str.strip()
-        df_factores["producto"] = df_factores["producto"].astype(str).str.strip().str.capitalize()
-        if "diasemanal" in df_factores.columns:
-            df_factores["dia_index"] = pd.to_numeric(df_factores["diasemanal"], errors="coerce")
-        elif "dia_de_la_semana" in df_factores.columns:
-            df_factores["dia_index"] = pd.to_numeric(df_factores["dia_de_la_semana"], errors="coerce")
-
-    if not df_ponderados.empty:
-        df_ponderados["id_estacion"] = df_ponderados["id_estacion"].astype(str).str.strip()
-        df_ponderados["producto"] = df_ponderados["producto"].astype(str).str.strip().str.capitalize()
-
-    if not df_cargas.empty:
-        df_cargas["id_estacion"] = df_cargas["id_estacion"].astype(str).str.strip()
-        df_cargas["producto"] = df_cargas["producto"].astype(str).str.strip().str.capitalize()
-        if "fecha" in df_cargas.columns:
-            df_cargas["fecha"] = pd.to_datetime(df_cargas["fecha"]).dt.date
-        if "volumen" in df_cargas.columns:
-            df_cargas["volumen"] = pd.to_numeric(df_cargas["volumen"], errors="coerce").fillna(0.0)
-
-    df_inv_hoy = db.obtener_inventarios()
-
-    if df_inv_hoy:
-        df_inv_hoy = pd.DataFrame(df_inv_hoy)
-        if "fecha" in df_inv_hoy.columns:
-            df_inv_hoy["fecha"] = pd.to_datetime(df_inv_hoy["fecha"]).dt.date
-        if "producto" in df_inv_hoy.columns:
-            df_inv_hoy["producto"] = df_inv_hoy["producto"].astype(str).str.strip().str.capitalize()
-        if "id_estacion" in df_inv_hoy.columns:
-            df_inv_hoy["id_estacion"] = df_inv_hoy["id_estacion"].astype(str).str.strip()
-    else:
-        df_inv_hoy = pd.DataFrame()
-
-    datos_tanques = db.obtener_tanques_estaciones()
-    if datos_tanques:
-        df_tanques = pd.DataFrame(datos_tanques)
-        if "producto" in df_tanques.columns:
-            df_tanques["producto"] = df_tanques["producto"].astype(str).str.strip().str.capitalize()
-        if "id_estacion" in df_tanques.columns:
-            df_tanques["id_estacion"] = df_tanques["id_estacion"].astype(str).str.strip()
-    else:
-        df_tanques = pd.DataFrame()
-
-    fecha_hoy = date.today()
-    productos = ["Regular", "Premium", "Diesel"]
-
+    hoy = date.today()
     for producto in productos:
-        if producto == "Regular":
-            color_Hex = "#2e7d32"
-        elif producto == "Premium":
-            color_Hex = "#d84315"
-        else:
-            color_Hex = "#424242"
+        st.markdown(f"### ⛽ {producto}")
+        vdp_rows = ponderados[(ponderados["id_estacion"] == estacion) & (ponderados["producto"] == producto)] if not ponderados.empty else pd.DataFrame()
+        vdp = max(0.0, _numero(vdp_rows.iloc[0].get("vdp_ponderada", 0))) if not vdp_rows.empty else 0.0
 
-        st.markdown(f"<h3 style='color: {color_Hex};'>⛽ {producto}</h3>", unsafe_allow_html=True)
+        inv_rows = inventarios[(inventarios["id_estacion"] == estacion) & (inventarios["producto"] == producto)].copy() if not inventarios.empty else pd.DataFrame()
+        inventario = 0.0
+        if not inv_rows.empty:
+            inv_rows = inv_rows[inv_rows["fecha"].notna() & (inv_rows["fecha"] <= hoy)].sort_values("fecha")
+            if not inv_rows.empty:
+                ultimo = inv_rows.iloc[-1]
+                fecha_inv = ultimo["fecha"]
+                inventario = _numero(ultimo.get("volumen"))
+                for n in range(1, (hoy - fecha_inv).days + 1):
+                    dia_prev = fecha_inv + timedelta(days=n - 1)
+                    inventario += _valor_carga(cargas, estacion, producto, dia_prev) - vdp * _factor_del_dia(factores, estacion, producto, dia_prev)
 
-        vdp_base = 0.0
-        if not df_ponderados.empty:
-            match_pond = df_ponderados[
-                (df_ponderados["id_estacion"] == id_estacion_str) &
-                (df_ponderados["producto"] == producto)
-            ]
-            if not match_pond.empty and "vdp_ponderada" in match_pond.columns:
-                vdp_base = float(match_pond["vdp_ponderada"].values[0])
+        fechas = [hoy + timedelta(days=n) for n in range(14)]
+        cargas_actuales = [_valor_carga(cargas, estacion, producto, fecha) for fecha in fechas]
+        filas = {"Concepto": ["Inventario Inicial", "Venta Estimada", "Carga Programada", "Inventario Final", "D/S"]}
+        iniciales, ventas, finales, dias = [], [], [], []
+        for fecha, carga in zip(fechas, cargas_actuales):
+            venta = vdp * _factor_del_dia(factores, estacion, producto, fecha)
+            final = inventario + carga - venta
+            iniciales.append(round(inventario, 2))
+            ventas.append(round(venta, 2))
+            finales.append(round(final, 2))
+            dias.append(round(final / venta, 1) if venta > 0 else 0.0)
+            inventario = final
+        for i, fecha in enumerate(fechas):
+            filas[formatear_fecha_corta(fecha)] = [iniciales[i], ventas[i], cargas_actuales[i], finales[i], dias[i]]
+        st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
 
-        # --- LÓGICA DE INVENTARIO INICIAL Y PROYECCIÓN HASTA HOY ---
-        inv_inicial_hoy = 0.0
-        if not df_inv_hoy.empty and "id_estacion" in df_inv_hoy.columns and "producto" in df_inv_hoy.columns:
-            df_inv_est_prod = df_inv_hoy[
-                (df_inv_hoy["id_estacion"] == id_estacion_str) &
-                (df_inv_hoy["producto"] == producto)
-            ].copy()
-            
-            if not df_inv_est_prod.empty:
-                match_hoy = df_inv_est_prod[df_inv_est_prod["fecha"] == fecha_hoy]
-                if not match_hoy.empty:
-                    inv_inicial_hoy = float(match_hoy["volumen"].values[0])
-                else:
-                    df_anteriores = df_inv_est_prod[df_inv_est_prod["fecha"] < fecha_hoy]
-                    if not df_anteriores.empty:
-                        df_anteriores = df_anteriores.sort_values(by="fecha", ascending=False)
-                        ultima_fecha = df_anteriores["fecha"].values[0]
-                        volumen_ultimo = float(df_anteriores["volumen"].values[0])
-                        
-                        inv_actual_proyectado = volumen_ultimo
-                        current_date = ultima_fecha
-                        
-                        while current_date < fecha_hoy:
-                            factor_intermedio = 1.0
-                            if not df_factores.empty and "dia_index" in df_factores.columns:
-                                match_f = df_factores[
-                                    (df_factores["id_estacion"] == id_estacion_str) &
-                                    (df_factores["producto"] == producto) &
-                                    (df_factores["dia_index"] == current_date.isoweekday())
-                                ]
-                                if not match_f.empty:
-                                    for col_factor in ["factor", "factor_venta_diasemanal", "factor_estacionalidad"]:
-                                        if col_factor in match_f.columns and pd.notna(match_f[col_factor].values[0]):
-                                            factor_intermedio = float(match_f[col_factor].values[0])
-                                            break
-                            
-                            venta_dia_intermedio = vdp_base * factor_intermedio
-
-                            carga_intermedia = 0.0
-                            if not df_cargas.empty:
-                                match_c_ant = df_cargas[
-                                    (df_cargas["id_estacion"] == id_estacion_str) &
-                                    (df_cargas["producto"] == producto) &
-                                    (df_cargas["fecha"] == current_date)
-                                ]
-                                if not match_c_ant.empty:
-                                    carga_intermedia = float(match_c_ant["volumen"].values[0])
-
-                            inv_actual_proyectado = inv_actual_proyectado + carga_intermedia - venta_dia_intermedio
-                            current_date += timedelta(days=1)
-                        
-                        inv_inicial_hoy = inv_actual_proyectado
-
-        # --- CICLO DE PROYECCIÓN DE LOS 14 DÍAS ---
-        fechas_cols = []
-        fechas_reales = []
-        inv_iniciales = []
-        ventas_est = []
-        cargas_prog = []
-        inv_finales = []
-        dias_inventario = []
-
-        inv_actual = inv_inicial_hoy
-
-        for i in range(14):
-            fecha_dia = fecha_hoy + timedelta(days=i)
-            fecha_fmt = formatear_fecha_corta(fecha_dia)
-            fechas_cols.append(fecha_fmt)
-            fechas_reales.append(fecha_dia)
-
-            # Buscar factor de temporalidad para el día de la semana correspondiente
-            factor_dia = 1.0
-            if not df_factores.empty and "dia_index" in df_factores.columns:
-                match_factor = df_factores[
-                    (df_factores["id_estacion"] == id_estacion_str) &
-                    (df_factores["producto"] == producto) &
-                    (df_factores["dia_index"] == fecha_dia.isoweekday())
-                ]
-                if not match_factor.empty:
-                    for col_factor in ["factor", "factor_venta_diasemanal", "factor_estacionalidad"]:
-                        if col_factor in match_factor.columns and pd.notna(match_factor[col_factor].values[0]):
-                            factor_dia = float(match_factor[col_factor].values[0])
-                            break
-
-            venta_estimada_dia = vdp_base * factor_dia
-
-            carga_programada_dia = 0.0
-            if not df_cargas.empty:
-                match_carg = df_cargas[
-                    (df_cargas["id_estacion"] == id_estacion_str) &
-                    (df_cargas["producto"] == producto) &
-                    (df_cargas["fecha"] == fecha_dia)
-                ]
-                if not match_carg.empty:
-                    carga_programada_dia = float(match_carg["volumen"].values[0])
-
-            inv_inicial = inv_actual
-            inv_final = inv_inicial + carga_programada_dia - venta_estimada_dia
-            ds = (inv_final / venta_estimada_dia) if venta_estimada_dia > 0 else 0.0
-
-            inv_iniciales.append(round(inv_inicial, 2))
-            ventas_est.append(round(venta_estimada_dia, 2))
-            cargas_prog.append(round(carga_programada_dia, 2))
-            inv_finales.append(round(inv_final, 2))
-            dias_inventario.append(round(ds, 1))
-
-            inv_actual = inv_final
-
-        data_dict = {
-            "Concepto": ["Inventario Inicial", "Venta Estimada", "Carga Programada", "Inventario Final", "D/S"]
-        }
-        for idx, fecha_fmt in enumerate(fechas_cols):
-            data_dict[fecha_fmt] = [
-                inv_iniciales[idx],
-                ventas_est[idx],
-                cargas_prog[idx],
-                inv_finales[idx],
-                dias_inventario[idx]
-            ]
-
-        df_proyeccion = pd.DataFrame(data_dict)
-
-        # Configuración de columnas para el editor
-        column_config = {
-            "Concepto": st.column_config.TextColumn("Concepto", width="medium", disabled=True)
-        }
-        for col in [c for c in df_proyeccion.columns if c != "Concepto"]:
-            column_config[col] = st.column_config.NumberColumn(col, format="%.2f", width="small")
-
-        # Tabla interactiva con st.data_editor
-        edited_df = st.data_editor(
-            df_proyeccion,
-            use_container_width=True,
-            hide_index=True,
-            column_config=column_config,
-            key=f"editor_proyeccion_{producto}_{id_estacion_str}"
-        )
-
-        # Botón para guardar cambios de la carga programada
-        if st.button(f"Guardar Cambios de Carga - {producto}", key=f"btn_guardar_{producto}_{id_estacion_str}"):
+        st.markdown("**Captura de cargas programadas (solo enteros no negativos):**")
+        nuevas = []
+        for fecha, actual in zip(fechas, cargas_actuales):
+            cols = st.columns([1, 2])
+            cols[0].write(formatear_fecha_corta(fecha))
+            nuevo = cols[1].number_input(
+                "Volumen de carga",
+                min_value=0,
+                value=actual,
+                step=1,
+                format="%d",
+                key=f"carga_{estacion}_{producto}_{fecha.isoformat()}",
+                label_visibility="collapsed",
+            )
+            nuevas.append(nuevo)
+        if st.button(f"Guardar cargas de {producto}", key=f"guardar_cargas_{estacion}_{producto}"):
             try:
-                fila_carga = edited_df[edited_df["Concepto"] == "Carga Programada"]
-                if not fila_carga.empty:
-                    supabase = db._require_supabase()
-                    for idx, fecha_fmt in enumerate(fechas_cols):
-                        if fecha_fmt in fila_carga.columns:
-                            nuevo_volumen = float(fila_carga[fecha_fmt].values[0])
-                            fecha_real = fechas_reales[idx]
-
-                            data_upsert = {
-                                "id_estacion": id_estacion_str,
-                                "producto": producto,
-                                "fecha": fecha_real.isoformat(),
-                                "volumen": nuevo_volumen
-                            }
-                            supabase.table("programa_cargas").upsert(
-                                data_upsert,
-                                on_conflict="id_estacion,producto,fecha"
-                            ).execute()
-                    st.success(f"¡Cargas programadas para {producto} guardadas y registradas correctamente en Supabase!")
-                    st.rerun()
-                else:
-                    st.warning("No se encontró la fila de Carga Programada para guardar.")
-            except Exception as e:
-                st.error(f"Error al registrar los cambios: {e}")
-
+                valores = [db.validar_numero_entero(v, f"carga de {fecha}", minimo=0) for v, fecha in zip(nuevas, fechas)]
+                actualizadas = [(fecha, valor) for fecha, valor, actual in zip(fechas, valores, cargas_actuales) if valor != actual]
+                for fecha, valor in actualizadas:
+                    db.insertar_carga_programada(estacion, fecha, producto, valor)
+                st.success(f"Cargas guardadas. Cambios: {len(actualizadas)}.")
+                st.rerun()
+            except (ValueError, TypeError) as exc:
+                st.error(f"No se guardaron las cargas: {exc}")
+            except Exception as exc:
+                st.error(f"Error al registrar las cargas: {exc}")
         st.markdown("---")
