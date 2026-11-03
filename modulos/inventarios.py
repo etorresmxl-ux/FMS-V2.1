@@ -81,9 +81,10 @@ def render_inventarios(supabase_client, usuario_actual: str):
 
     st.markdown("Modifique los valores de volumen directamente en la tabla (solo números enteros). Las celdas vacías indican productos no disponibles:")
 
-    # 6. Tabla interactiva
+    # 6. Tabla interactiva (con altura ajustada a 600px)
     df_editado = st.data_editor(
         df_matriz,
+        height=600,
         column_config={
             "id_estacion": st.column_config.TextColumn("ID Estación", disabled=True),
             "nombre": st.column_config.TextColumn("Nombre", disabled=True),
