@@ -17,20 +17,29 @@ def main():
     supabase = get_supabase_client()
     data_loader = DataLoaderService(supabase)
 
-    # Simulación o gestión del usuario actual (ajusta según tu lógica de autenticación)
+    # Gestión de usuarios en el menú lateral
+    st.sidebar.title("Configuración de Usuario")
+    usuarios_disponibles = ["Brenda", "Daniela", "Jazmin", "Yesenia"]
+    
     if "usuario_actual" not in st.session_state:
-        st.session_state["usuario_actual"] = "admin"  # Usuario por defecto o dinámico
+        st.session_state["usuario_actual"] = "Brenda"
 
-    usuario_actual = st.session_state["usuario_actual"]
+    usuario_actual = st.sidebar.selectbox(
+        "Seleccionar Usuario:",
+        options=usuarios_disponibles,
+        index=usuarios_disponibles.index(st.session_state["usuario_actual"]) if st.session_state["usuario_actual"] in usuarios_disponibles else 0
+    )
+    st.session_state["usuario_actual"] = usuario_actual
 
     # Menú lateral de navegación
+    st.sidebar.markdown("---")
     st.sidebar.title("Navegación")
     opcion = st.sidebar.radio("Seleccionar Módulo", ["Inventarios", "Programación"])
 
     st.sidebar.markdown("---")
     st.sidebar.write(f"Usuario activo: **{usuario_actual}**")
 
-    # Enrutamiento de vistas según la opción seleccionada (pasando los 3 argumentos estándar)
+    # Enrutamiento de vistas según la opción seleccionada (pasando los 3 argumentos correctos)
     if opcion == "Inventarios":
         render_inventarios(supabase, usuario_actual, data_loader)
     elif opcion == "Programación":
