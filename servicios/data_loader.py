@@ -9,7 +9,8 @@ class DataLoaderService:
     def cargar_datos_maestros(_self) -> dict:
         """
         Carga y cachea por 1 hora los datos maestros estáticos (usuarios, estaciones, tanques, vdp, factores).
-        Normaliza todos los campos varchar a minúsculas y sin espacios.
+        Normaliza todos los campos varchar a minúsculas y fuerza todos los datos numéricos a enteros 
+        (excepto el factor en factor_venta_diasemanal).
         """
         try:
             usuarios = ["Brenda", "Daniela", "Jazmin", "Yesenia"]
@@ -22,27 +23,31 @@ class DataLoaderService:
                 df_usr["id_estacion"] = df_usr["id_estacion"].astype(str).str.lower().str.strip()
                 df_usr["usuario"] = df_usr["usuario"].astype(str).str.lower().str.strip()
 
-            # Tanques de estaciones
+            # Tanques de estaciones (limite_max y limite_min como enteros)
             res_tanques = _self.supabase.table("tanques_estaciones").select("id_estacion, producto, limite_max").execute()
             df_tanques = pd.DataFrame(res_tanques.data) if res_tanques.data else pd.DataFrame()
             if not df_tanques.empty:
                 df_tanques["id_estacion"] = df_tanques["id_estacion"].astype(str).str.lower().str.strip()
                 df_tanques["producto"] = df_tanques["producto"].astype(str).str.lower().str.strip()
-                df_tanques["limite_min"] = 5000
+                df_tanques["limite_max"] = pd.to_numeric(df_tanques["limite_max"], errors="coerce").fillna(0).astype(int)
+                df_tanques["limite_min"] = 5000  # Entero
 
-            # VDP Ponderada
+            # VDP Ponderada (vdp_ponderada como entero)
             res_vdp = _self.supabase.table("vdp_ponderada_12w").select("id_estacion, producto, vdp_ponderada").execute()
             df_vdp = pd.DataFrame(res_vdp.data) if res_vdp.data else pd.DataFrame()
             if not df_vdp.empty:
                 df_vdp["id_estacion"] = df_vdp["id_estacion"].astype(str).str.lower().str.strip()
                 df_vdp["producto"] = df_vdp["producto"].astype(str).str.lower().str.strip()
+                df_vdp["vdp_ponderada"] = pd.to_numeric(df_vdp["vdp_ponderada"], errors="coerce").fillna(0).astype(int)
 
-            # Factores de venta día semanal
+            # Factores de venta día semanal (diasemanal entero, factor SE EXCEPTA y se mantiene numérico/float)
             res_diasemanal = _self.supabase.table("factor_venta_diasemanal").select("id_estacion, producto, diasemanal, factor").execute()
             df_diasemanal = pd.DataFrame(res_diasemanal.data) if res_diasemanal.data else pd.DataFrame()
             if not df_diasemanal.empty:
                 df_diasemanal["id_estacion"] = df_diasemanal["id_estacion"].astype(str).str.lower().str.strip()
                 df_diasemanal["producto"] = df_diasemanal["producto"].astype(str).str.lower().str.strip()
+                df_diasemanal["diasemanal"] = pd.to_numeric(df_diasemanal["diasemanal"], errors="coerce").fillna(0).astype(int)
+                df_diasemanal["factor"] = pd.to_numeric(df_diasemanal["factor"], errors="coerce").fillna(1.0) # Excepción: se mantiene como float
 
             return {
                 "usuarios": usuarios,
@@ -63,7 +68,7 @@ class DataLoaderService:
         - id_estacion
         - fecha
         - producto
-        - volumen
+        - volumen (manejado estrictamente como entero)
         """
         try:
             res_inv = _self.supabase.table("inventarios").select("id_estacion, fecha, producto, volumen").order("fecha", desc=True).execute()
@@ -75,11 +80,11 @@ class DataLoaderService:
                     if col not in df.columns:
                         df[col] = None
 
-                # Normalización estricta de tipos y minúsculas para campos varchar
+                # Normalización estricta de tipos, minúsculas para varchar y enteros para volumen
                 df["id_estacion"] = df["id_estacion"].astype(str).str.lower().str.strip()
                 df["producto"] = df["producto"].astype(str).str.lower().str.strip()
                 df["fecha"] = pd.to_datetime(df["fecha"]).dt.strftime("%Y-%m-%d")
-                df["volumen"] = pd.to_numeric(df["volumen"], errors="coerce").fillna(0.0)
+                df["volumen"] = pd.to_numeric(df["volumen"], errors="coerce").fillna(0).astype(int)
 
                 df = df[columnas_requeridas].sort_values(by=["fecha", "id_estacion", "producto"], ascending=[False, True, True])
             else:
