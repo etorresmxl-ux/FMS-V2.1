@@ -53,7 +53,7 @@ class DataOutputService:
                 if volumen < 0:
                     return False, f"El volumen de {prod} en la estación {id_estacion} no puede ser negativo.", []
 
-                # Validar límites del tanque desde memoria
+                # Validar límites del tanque desde memoria (con mínimo fijo en 5000)
                 limite_max = capacidades_estacion[prod].get("limite_max")
                 limite_min = capacidades_estacion[prod].get("limite_min", 5000)
 
