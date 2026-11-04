@@ -58,3 +58,6 @@ def main():
     elif selected == "Programación":
         st.subheader("Módulo de Programación")
         st.info("Próximamente: Planificación de cargas y abastecimientos.")
+        
+if __name__ == "__main__":
+    main()
