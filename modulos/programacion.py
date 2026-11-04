@@ -32,30 +32,30 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         st.warning(f"El usuario '{usuario_actual}' no tiene estaciones asignadas.")
         return
 
-    # Extraer lista de estaciones asociadas de forma robusta
+    # Extraer lista de estaciones asociadas conservando el formato original (E#####) para las búsquedas
     estaciones_list = []
     for _, row in df_usr_filtrado.iterrows():
         raw_id = str(row.get("id_estacion", "")).strip()
         est_data = row.get("estaciones")
         if isinstance(est_data, dict):
             estaciones_list.append({
-                "id_estacion_db": raw_id.lower(),
-                "id_estacion": raw_id,
-                "nombre": str(est_data.get("nombre", "")),
-                "plaza": str(est_data.get("plaza", ""))
+                "id_estacion_db": raw_id,                     # <- Formato original exacto (E#####) para cruces en BD
+                "id_estacion": raw_id.upper(),                # <- Visualización en mayúsculas
+                "nombre": str(est_data.get("nombre", "")).upper(),
+                "plaza": str(est_data.get("plaza", "")).title()
             })
         elif isinstance(est_data, list) and len(est_data) > 0:
             est_dict = est_data[0]
             estaciones_list.append({
-                "id_estacion_db": raw_id.lower(),
-                "id_estacion": raw_id,
-                "nombre": str(est_dict.get("nombre", "")),
-                "plaza": str(est_dict.get("plaza", ""))
+                "id_estacion_db": raw_id,
+                "id_estacion": raw_id.upper(),
+                "nombre": str(est_dict.get("nombre", "")).upper(),
+                "plaza": str(est_dict.get("plaza", "")).title()
             })
         else:
             estaciones_list.append({
-                "id_estacion_db": raw_id.lower(),
-                "id_estacion": raw_id,
+                "id_estacion_db": raw_id,
+                "id_estacion": raw_id.upper(),
                 "nombre": "",
                 "plaza": ""
             })
@@ -233,7 +233,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
 
         st.dataframe(
             df_display,
-            width='stretch',
+            use_container_width=True,
             hide_index=True
         )
 
@@ -257,7 +257,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
 
         df_editado_prog = st.data_editor(
             df_editor_input,
-            width='stretch',
+            use_container_width=True,
             hide_index=True,
             key=f"editor_prog_{prod_lower}_{id_estacion_actual_db}",
             column_config=column_config_dict
