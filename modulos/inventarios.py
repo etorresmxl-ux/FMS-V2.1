@@ -2,7 +2,7 @@ import datetime
 import pandas as pd
 import streamlit as st
 
-def render_inventarios(supabase_client, usuario_actual, data_loader, OutputService):
+def render_inventarios(supabase_client, usuario_actual, data_loader):
     st.subheader("Gestión de Inventarios")
 
     # 1. Cargar datos maestros estáticos e inventarios por separado
@@ -37,6 +37,14 @@ def render_inventarios(supabase_client, usuario_actual, data_loader, OutputServi
                 "id_estacion": raw_id.upper(),
                 "nombre": str(est_data.get("nombre", "")).title(),
                 "plaza": str(est_data.get("plaza", "")).title()
+            })
+        elif isinstance(est_data, list) and len(est_data) > 0:
+            est_dict = est_data[0]
+            estaciones_list.append({
+                "id_estacion_db": raw_id.lower(),
+                "id_estacion": raw_id.upper(),
+                "nombre": str(est_dict.get("nombre", "")).title(),
+                "plaza": str(est_dict.get("plaza", "")).title()
             })
         else:
             estaciones_list.append({
@@ -91,7 +99,7 @@ def render_inventarios(supabase_client, usuario_actual, data_loader, OutputServi
     columnas_orden = ["ID Estacion", "Nombre", "Plaza", "Regular", "Premium", "Diesel"]
     df_matriz = df_matriz[columnas_orden]
 
-    # Mostrar la tabla interactiva de edición con altura fija de 600px
+    # Mostrar la tabla interactiva de edición
     df_editado = st.data_editor(
         df_matriz,
         use_container_width=True,
@@ -109,42 +117,34 @@ def render_inventarios(supabase_client, usuario_actual, data_loader, OutputServi
     # 3. BOTÓN DE GUARDAR / ACTUALIZAR REGISTRO
     # ---------------------------------------------------------
     if st.button("Guardar / Actualizar Registro", type="primary"):
-        df_normalizar = df_editado.rename(columns={
-            "ID Estacion": "id_estacion",
-            "Regular": "regular",
-            "Premium": "premium",
-            "Diesel": "diesel"
-        })
+        registros = []
+        for _, row in df_editado.iterrows():
+            id_est = str(row["ID Estacion"]).lower().strip()
+            for prod in ["Regular", "Premium", "Diesel"]:
+                val = row[prod]
+                if pd.notna(val) and val != "":
+                    registros.append({
+                        "id_estacion": id_est,
+                        "fecha": fecha_str,
+                        "producto": prod.lower(),
+                        "volumen": float(val)
+                    })
 
-        output_service = OutputService()
-        exito, mensaje, registros = output_service.validar_y_normalizar(df_normalizar, df_tanques)
-
-        # Manejo de errores de validación de datos
-        if not exito:
-            st.error(f"❌ **Error de validación:** {mensaje}")
+        if not registros:
+            st.warning("⚠️ No hay valores de inventario ingresados para guardar.")
         else:
-            if not registros:
-                st.warning("⚠️ No hay valores de inventario ingresados para guardar.")
-            else:
-                for reg in registros:
-                    reg["fecha"] = fecha_str
-                    reg["id_estacion"] = str(reg["id_estacion"]).lower().strip()
-                    reg["producto"] = str(reg["producto"]).lower().strip()
+            try:
+                # Inserción o actualización en Supabase
+                supabase_client.table("inventarios").upsert(
+                    registros,
+                    on_conflict="id_estacion,fecha,producto"
+                ).execute()
 
-                try:
-                    # Inserción o actualización en Supabase
-                    supabase_client.table("inventarios").upsert(
-                        registros,
-                        on_conflict="id_estacion,fecha,producto"
-                    ).execute()
+                # Refrescar caché de inventarios
+                data_loader.invalidar_inventarios()
 
-                    # Refrescar y limpiar la caché exclusivamente para inventarios
-                    data_loader.invalidar_inventarios()
+                st.success(f"✅ ¡Inventarios actualizados y guardados correctamente para el día {fecha_str}!")
+                st.rerun()
 
-                    # Mensaje de información correcta al guardar con éxito
-                    st.success(f"✅ ¡Inventarios actualizados y guardados correctamente para el día {fecha_str}!")
-                    st.rerun()
-
-                except Exception as e:
-                    # Mensaje de error detallado ante fallos de conexión o base de datos
-                    st.error(f"❌ **Error al guardar los datos en Supabase:** {e}")
+            except Exception as e:
+                st.error(f"❌ **Error al guardar los datos en Supabase:** {e}")
