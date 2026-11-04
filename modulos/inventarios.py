@@ -41,18 +41,14 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
 
     df_base_estaciones = pd.DataFrame(estaciones_list).drop_duplicates(subset=["id_estacion"])
 
-    # ---------------------------------------------------------
     # 1. FILTRO DE FECHA
-    # ---------------------------------------------------------
     col_fecha, _ = st.columns([1, 2])
     with col_fecha:
         fecha_seleccionada = st.date_input("Seleccionar Fecha de Registro", value=datetime.date.today())
 
     fecha_str = fecha_seleccionada.strftime("%Y-%m-%d")
 
-    # ---------------------------------------------------------
     # 2. CONSTRUCCIÓN DE LA TABLA MATRIZ
-    # ---------------------------------------------------------
     df_inv_fecha = pd.DataFrame()
     if not df_inventarios_cache.empty and "fecha" in df_inventarios_cache.columns:
         df_inv_fecha = df_inventarios_cache[df_inventarios_cache["fecha"].astype(str) == fecha_str]
@@ -91,15 +87,13 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
         hide_index=True,
         disabled=["ID Estacion", "Nombre", "Plaza"],
         column_config={
-            "Regular": st.column_config.NumberColumn("Regular", min_value=0, step=1, format="%d"),
-            "Premium": st.column_config.NumberColumn("Premium", min_value=0, step=1, format="%d"),
-            "Diesel": st.column_config.NumberColumn("Diesel", min_value=0, step=1, format="%d"),
+            "Regular": st.column_config.NumberColumn("Regular", min_value=0, step=1, format="%,d"),
+            "Premium": st.column_config.NumberColumn("Premium", min_value=0, step=1, format="%,d"),
+            "Diesel": st.column_config.NumberColumn("Diesel", min_value=0, step=1, format="%,d"),
         }
     )
 
-    # ---------------------------------------------------------
     # 3. BOTÓN DE GUARDAR / ACTUALIZAR REGISTRO
-    # ---------------------------------------------------------
     if st.button("Guardar / Actualizar Registro", type="primary"):
         df_normalizar = df_editado.rename(columns={
             "ID Estacion": "id_estacion",
