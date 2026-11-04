@@ -3,13 +3,13 @@ import pandas as pd
 import streamlit as st
 from servicios.data_output import DataOutputService
 
-def render_programacion(supabase_client, usuario_actual, data_loader):
-    st.subheader("Módulo de Programación de Cargas")
+def render_programacion(supabase_client, data_loader, usuario_actual):
+    st.markdown("## 📊 Módulo de Programación de Cargas")
 
     # Inicializar el servicio de normalización de salidas
     data_output = DataOutputService()
 
-    # 1. Cargar datos maestros e inventarios estructurados
+    # 1. Cargar datos maestros, inventarios y el programa de cargas optimizado (14 días)
     datos_maestros = data_loader.cargar_datos_maestros()
     df_usr = datos_maestros.get("estaciones_usuario", pd.DataFrame())
     df_tanques = datos_maestros.get("tanques_estaciones", pd.DataFrame())
@@ -17,8 +17,9 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
     df_factor = datos_maestros.get("factor_diasemanal", pd.DataFrame())
 
     df_inventarios = data_loader.cargar_inventarios()
+    df_programa_cache = data_loader.cargar_programa_cargas()
 
-    # Normalizar usuario actual
+    # Normalizar usuario actual a minúsculas
     usuario_norm = str(usuario_actual).lower().strip()
 
     # Filtrar estaciones según el usuario actual
@@ -65,9 +66,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         st.warning("No se encontraron detalles válidos para las estaciones del usuario.")
         return
 
-    # ---------------------------------------------------------
     # 2. FILTROS INICIALES: PLAZA Y ESTACIÓN
-    # ---------------------------------------------------------
     plazas_disponibles = sorted(list(df_base_estaciones["plaza"].dropna().unique()))
     if not plazas_disponibles:
         st.warning("No hay plazas disponibles para mostrar.")
@@ -84,14 +83,11 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
     with col_estacion:
         estacion_sel = st.selectbox("Seleccionar Estación:", options=nombres_estaciones, key="prog_estacion")
 
-    # Identificar la estación seleccionada
     estacion_info = df_estaciones_plaza[df_estaciones_plaza["nombre"] == estacion_sel].iloc[0]
     id_estacion_actual_db = estacion_info["id_estacion_db"]
     id_estacion_actual_raw = estacion_info["id_estacion"]
 
-    # ---------------------------------------------------------
     # 3. IDENTIFICAR PRODUCTOS DISPONIBLES EN LA ESTACIÓN
-    # ---------------------------------------------------------
     if df_tanques.empty or "id_estacion" not in df_tanques.columns:
         st.info("No hay información de tanques cargada en el sistema.")
         return
@@ -104,14 +100,11 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
 
     productos_disponibles = tanques_estacion["producto"].dropna().unique()
 
-    # Definir rango de 14 días a partir de hoy (Strings YYYY-MM-DD para Supabase y etiquetas)
     fecha_hoy = datetime.date.today()
     fechas_14d = [fecha_hoy + datetime.timedelta(days=i) for i in range(14)]
     columnas_fechas_strs = [f.strftime("%Y-%m-%d") for f in fechas_14d]
 
-    # ---------------------------------------------------------
     # 4. GENERAR MATRIZ Y TABLA DE PROGRAMA DE CARGAS POR CADA PRODUCTO
-    # ---------------------------------------------------------
     colores_acento = {
         "regular": "green",
         "premium": "darkorange",
@@ -124,18 +117,15 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         
         st.markdown(f"### <span style='color:{color_titulo};'>{str(producto).upper()}</span>", unsafe_allow_html=True)
 
-        # Configuración del tanque para este producto
         tanque_prod = tanques_estacion[tanques_estacion["producto"] == producto].iloc[0]
         limite_max = tanque_prod.get("limite_max", 0)
 
-        # Obtener VDP Ponderada
         vdp_ponderada = 0.0
         if not df_vdp.empty and {"id_estacion", "producto"}.issubset(df_vdp.columns):
             vdp_row = df_vdp[(df_vdp["id_estacion"] == id_estacion_actual_db) & (df_vdp["producto"] == producto)]
             if not vdp_row.empty:
                 vdp_ponderada = float(vdp_row["vdp_ponderada"].values[0])
 
-        # Obtener Inventario Inicial de hoy
         inventario_actual_inicial = 0.0
         if not df_inventarios.empty and {"id_estacion", "producto", "fecha"}.issubset(df_inventarios.columns):
             inv_hoy_row = df_inventarios[
@@ -146,24 +136,19 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
             if not inv_hoy_row.empty:
                 inventario_actual_inicial = float(inv_hoy_row["volumen"].values[0])
 
-        # Cargar el programa de cargas existente desde Supabase para los próximos 14 días
-        try:
-            response = supabase_client.table("programa_cargas") \
-                .select("fecha, volumen") \
-                .eq("id_estacion", id_estacion_actual_db) \
-                .eq("producto", prod_lower) \
-                .in_("fecha", columnas_fechas_strs) \
-                .execute()
-            df_prog_existente = pd.DataFrame(response.data) if response.data else pd.DataFrame()
-        except Exception as e:
-            st.error(f"Error al cargar programa_cargas para {producto}: {e}")
-            df_prog_existente = pd.DataFrame()
+        # Filtrar el programa de cargas desde la caché optimizada del DataLoader (14 días)
+        df_prog_existente = pd.DataFrame()
+        if not df_programa_cache.empty and {"id_estacion", "fecha", "producto", "volumen"}.issubset(df_programa_cache.columns):
+            df_prog_existente = df_programa_cache[
+                (df_programa_cache["id_estacion"] == id_estacion_actual_db) &
+                (df_programa_cache["producto"] == prod_lower) &
+                (df_programa_cache["fecha"].astype(str).isin(columnas_fechas_strs))
+            ]
 
-        # Mapear volumen de carga programada por fecha
         mapa_cargas_prog = {}
-        if not df_prog_existente.empty and {"fecha", "volumen"}.issubset(df_prog_existente.columns):
+        if not df_prog_existente.empty:
             for _, r_prog in df_prog_existente.iterrows():
-                mapa_cargas_prog[str(r_prog["fecha"])] = float(r_prog["volumen"])
+                mapa_cargas_prog[str(r_prog["fecha"])] = int(r_prog["volumen"])
 
         # Simulación de los 14 días
         row_inv_inicial = []
@@ -179,7 +164,6 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
             f_str = fecha_dt.strftime("%Y-%m-%d")
             dia_sem = fecha_dt.isoweekday()
 
-            # Obtener el factor de venta diario semanal
             factor_venda = 1.0
             if not df_factor.empty and {"id_estacion", "producto", "diasemanal"}.issubset(df_factor.columns):
                 factor_row = df_factor[
@@ -193,8 +177,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
             inv_inicial_dia = inv_corrido
             cap_carga_dia = limite_max - inv_inicial_dia
             
-            # Carga programada extraída de Supabase (si existe)
-            carga_prog_dia = mapa_cargas_prog.get(f_str, 0.0)
+            carga_prog_dia = mapa_cargas_prog.get(f_str, 0)
             
             venta_est_dia = vdp_ponderada * factor_venda
             inv_final_dia = inv_inicial_dia + carga_prog_dia - venta_est_dia
@@ -209,7 +192,6 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
 
             inv_corrido = inv_final_dia
 
-        # Armar etiquetas de columnas para la matriz visual superior (ddd dd-mmm) y de escritura (dd-mmm)
         columnas_fechas_labels_sup = [f.strftime("%a %d-%b") for f in fechas_14d]
         columnas_fechas_labels_edit = [f.strftime("%d-%b") for f in fechas_14d]
 
@@ -243,7 +225,6 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
                 axis=1
             )
 
-        # Mostrar matriz de proyección analítica
         st.dataframe(
             df_display,
             use_container_width=True,
@@ -258,9 +239,8 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
 
         df_editor_input = pd.DataFrame([fila_editable])
 
-        # Configuración de columnas para el editor
         column_config_dict = {
-            "id_estacion_db_hidden": None,  # Oculta columna auxiliar
+            "id_estacion_db_hidden": None,
             "Programa": st.column_config.TextColumn("Programa", disabled=True),
         }
 
@@ -277,16 +257,15 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
             column_config=column_config_dict
         )
 
-        # Botón para guardar el programa de cargas de este producto
         if st.button(f"Guardar Programa - {str(producto).capitalize()}", key=f"btn_save_prog_{prod_lower}_{id_estacion_actual_db}", type="primary"):
             df_para_normalizar = df_editado_prog.copy()
             df_para_normalizar["ID Estacion"] = id_estacion_actual_raw
             
-            # Mapear las etiquetas de fecha simplificadas de vuelta a sus strings YYYY-MM-DD originales
             for idx, col_label_edit in enumerate(columnas_fechas_labels_edit):
                 f_str = columnas_fechas_strs[idx]
                 df_para_normalizar[f_str] = df_para_normalizar[col_label_edit]
 
+            # Normalización robusta mediante DataOutputService
             registros_prog = data_output.normalizar_programa_cargas(
                 df_editado=df_para_normalizar,
                 columnas_fechas_str=columnas_fechas_strs,
@@ -299,6 +278,9 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
                         registros_prog,
                         on_conflict="id_estacion,fecha,producto"
                     ).execute()
+                
+                # Invalidar caché local exclusivamente para el programa de cargas
+                data_loader.invalidar_programa_cargas()
                 
                 st.success(f"✅ Programa de cargas para **{str(producto).upper()}** guardado correctamente.")
                 st.rerun()
