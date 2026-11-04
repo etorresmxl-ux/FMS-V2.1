@@ -6,11 +6,13 @@ from servicios.data_output import DataOutputService
 def render_inventarios(supabase_client, usuario_actual, data_loader):
     st.subheader("Gestión de Inventarios")
 
-    # 1. Cargar datos maestros desde la memoria en caché
+    # 1. Cargar datos maestros estáticos e inventarios por separado
     datos_maestros = data_loader.cargar_datos_maestros()
     df_tanques = datos_maestros.get("tanques_estaciones", pd.DataFrame())
     df_usr = datos_maestros.get("estaciones_usuario", pd.DataFrame())
-    df_inventarios_cache = datos_maestros.get("inventarios", pd.DataFrame())
+    
+    # Carga dedicada para inventarios con actualización selectiva
+    df_inventarios_cache = data_loader.cargar_inventarios()
 
     # Obtener las estaciones pertenecientes al usuario actual
     if not df_usr.empty:
@@ -41,14 +43,18 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
 
     df_base_estaciones = pd.DataFrame(estaciones_list).drop_duplicates(subset=["id_estacion"])
 
+    # ---------------------------------------------------------
     # 1. FILTRO DE FECHA
+    # ---------------------------------------------------------
     col_fecha, _ = st.columns([1, 2])
     with col_fecha:
         fecha_seleccionada = st.date_input("Seleccionar Fecha de Registro", value=datetime.date.today())
 
     fecha_str = fecha_seleccionada.strftime("%Y-%m-%d")
 
+    # ---------------------------------------------------------
     # 2. CONSTRUCCIÓN DE LA TABLA MATRIZ
+    # ---------------------------------------------------------
     df_inv_fecha = pd.DataFrame()
     if not df_inventarios_cache.empty and "fecha" in df_inventarios_cache.columns:
         df_inv_fecha = df_inventarios_cache[df_inventarios_cache["fecha"].astype(str) == fecha_str]
@@ -81,10 +87,12 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
 
     st.info(f"Mostrando matriz de inventarios para el día: **{fecha_str}**")
 
+    # Mostrar la tabla interactiva de edición con altura fija de 600px
     df_editado = st.data_editor(
         df_matriz,
         use_container_width=True,
         hide_index=True,
+        height=600,
         disabled=["ID Estacion", "Nombre", "Plaza"],
         column_config={
             "Regular": st.column_config.NumberColumn("Regular", min_value=0, step=1, format="%,d"),
@@ -93,7 +101,9 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
         }
     )
 
+    # ---------------------------------------------------------
     # 3. BOTÓN DE GUARDAR / ACTUALIZAR REGISTRO
+    # ---------------------------------------------------------
     if st.button("Guardar / Actualizar Registro", type="primary"):
         df_normalizar = df_editado.rename(columns={
             "ID Estacion": "id_estacion",
@@ -121,6 +131,7 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
                     on_conflict="id_estacion,fecha,producto"
                 ).execute()
 
+                # Refrescar y limpiar la caché exclusivamente para inventarios
                 data_loader.invalidar_inventarios()
 
                 st.success(f"¡Inventarios actualizados correctamente para el {fecha_str}!")
