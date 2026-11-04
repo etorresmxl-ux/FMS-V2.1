@@ -3,6 +3,7 @@ import pandas as pd
 from servicios.database import get_supabase_client
 from servicios.data_loader import DataLoaderService
 from modulos.inventarios import render_inventarios
+from modulos.programacion import render_programacion
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -56,8 +57,7 @@ def main():
         st.info("Próximamente: Registro y control histórico de ventas.")
         
     elif selected == "Programación":
-        st.subheader("Módulo de Programación")
-        st.info("Próximamente: Planificación de cargas y abastecimientos.")
+        render_programacion(supabase, usuario_actual, data_loader)
         
 if __name__ == "__main__":
     main()
