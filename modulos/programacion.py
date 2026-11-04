@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 from servicios.data_output import DataOutputService
 
-def render_programacion(supabase_client, data_loader, usuario_actual):
+def render_programacion(supabase_client, usuario_actual, data_loader):
     st.markdown("## 📊 Módulo de Programación de Cargas")
 
     # Inicializar el servicio de normalización de salidas
@@ -66,7 +66,9 @@ def render_programacion(supabase_client, data_loader, usuario_actual):
         st.warning("No se encontraron detalles válidos para las estaciones del usuario.")
         return
 
+    # ---------------------------------------------------------
     # 2. FILTROS INICIALES: PLAZA Y ESTACIÓN
+    # ---------------------------------------------------------
     plazas_disponibles = sorted(list(df_base_estaciones["plaza"].dropna().unique()))
     if not plazas_disponibles:
         st.warning("No hay plazas disponibles para mostrar.")
@@ -87,7 +89,9 @@ def render_programacion(supabase_client, data_loader, usuario_actual):
     id_estacion_actual_db = estacion_info["id_estacion_db"]
     id_estacion_actual_raw = estacion_info["id_estacion"]
 
+    # ---------------------------------------------------------
     # 3. IDENTIFICAR PRODUCTOS DISPONIBLES EN LA ESTACIÓN
+    # ---------------------------------------------------------
     if df_tanques.empty or "id_estacion" not in df_tanques.columns:
         st.info("No hay información de tanques cargada en el sistema.")
         return
@@ -104,7 +108,9 @@ def render_programacion(supabase_client, data_loader, usuario_actual):
     fechas_14d = [fecha_hoy + datetime.timedelta(days=i) for i in range(14)]
     columnas_fechas_strs = [f.strftime("%Y-%m-%d") for f in fechas_14d]
 
+    # ---------------------------------------------------------
     # 4. GENERAR MATRIZ Y TABLA DE PROGRAMA DE CARGAS POR CADA PRODUCTO
+    # ---------------------------------------------------------
     colores_acento = {
         "regular": "green",
         "premium": "darkorange",
@@ -227,7 +233,7 @@ def render_programacion(supabase_client, data_loader, usuario_actual):
 
         st.dataframe(
             df_display,
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
 
@@ -251,7 +257,7 @@ def render_programacion(supabase_client, data_loader, usuario_actual):
 
         df_editado_prog = st.data_editor(
             df_editor_input,
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
             key=f"editor_prog_{prod_lower}_{id_estacion_actual_db}",
             column_config=column_config_dict
