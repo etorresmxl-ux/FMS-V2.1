@@ -9,6 +9,18 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
     # Inicializar el servicio de normalización de salidas
     data_output = DataOutputService()
 
+    # Inyectar CSS para ocultar los encabezados (headers) de la tabla de edición si se desea
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stDataEditor"] thead {
+            display: none;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     # 1. Cargar datos maestros e inventarios estructurados
     datos_maestros = data_loader.cargar_datos_maestros()
     df_usr = datos_maestros.get("estaciones_usuario", pd.DataFrame())
@@ -39,22 +51,22 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         if isinstance(est_data, dict):
             estaciones_list.append({
                 "id_estacion_db": raw_id.lower(),
-                "id_estacion": raw_id.upper(),
-                "nombre": str(est_data.get("nombre", "")).upper(),
-                "plaza": str(est_data.get("plaza", "")).title()
+                "id_estacion": raw_id,
+                "nombre": str(est_data.get("nombre", "")),
+                "plaza": str(est_data.get("plaza", ""))
             })
         elif isinstance(est_data, list) and len(est_data) > 0:
             est_dict = est_data[0]
             estaciones_list.append({
                 "id_estacion_db": raw_id.lower(),
-                "id_estacion": raw_id.upper(),
-                "nombre": str(est_dict.get("nombre", "")).upper(),
-                "plaza": str(est_dict.get("plaza", "")).title()
+                "id_estacion": raw_id,
+                "nombre": str(est_dict.get("nombre", "")),
+                "plaza": str(est_dict.get("plaza", ""))
             })
         else:
             estaciones_list.append({
                 "id_estacion_db": raw_id.lower(),
-                "id_estacion": raw_id.upper(),
+                "id_estacion": raw_id,
                 "nombre": "",
                 "plaza": ""
             })
@@ -250,26 +262,23 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         )
 
         # --- SECCIÓN: TABLA DE ESCRITURA / PROGRAMA DE CARGAS (14 DÍAS) ---
-        st.markdown(f"##### ✏️ Editar Programa de Cargas (14 días) - {str(producto).capitalize()}")
-
-        # Construir formato tabular para st.data_editor (1 sola fila con los 14 días para la estación seleccionada)
-        fila_editable = {"id_estacion": id_estacion_actual_raw, "Estación": estacion_sel}
+        # Se eliminó la columna id_estacion y se renombró la segunda a "Programa" para que coincida exactamente en ancho/columnas
+        fila_editable = {"id_estacion_db_hidden": id_estacion_actual_db, "Programa": "Carga Programada"}
         for idx, f_str in enumerate(columnas_fechas_strs):
-            fila_editable[f_str] = int(row_carga_prog[idx]) if row_carga_prog[idx] > 0 else None
+            col_label = columnas_fechas_labels[idx]
+            fila_editable[col_label] = int(row_carga_prog[idx]) if row_carga_prog[idx] > 0 else None
 
         df_editor_input = pd.DataFrame([fila_editable])
 
         # Configuración de columnas para el editor
         column_config_dict = {
-            "id_estacion": st.column_config.TextColumn("ID Estación", disabled=True),
-            "Estación": st.column_config.TextColumn("Estación", disabled=True),
+            "id_estacion_db_hidden": None,  # Oculta completamente esta columna auxiliar si es necesario
+            "Programa": st.column_config.TextColumn("Programa", disabled=True),
         }
 
-        for idx, f_str in enumerate(columnas_fechas_strs):
-            f_dt = fechas_14d[idx]
-            header_label = f_dt.strftime("%a %d-%b")
-            column_config_dict[f_str] = st.column_config.NumberColumn(
-                header_label, min_value=0, step=1, format="%,d"
+        for col_label in columnas_fechas_labels:
+            column_config_dict[col_label] = st.column_config.NumberColumn(
+                col_label, min_value=0, step=1, format="%,d"
             )
 
         df_editado_prog = st.data_editor(
@@ -282,9 +291,17 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
 
         # Botón para guardar el programa de cargas de este producto
         if st.button(f"Guardar Programa - {str(producto).capitalize()}", key=f"btn_save_prog_{prod_lower}_{id_estacion_actual_db}", type="primary"):
-            # Normalizar y estructurar datos usando DataOutputService (varchars en minúsculas, enteros numéricos)
+            # Reconstruir un formato compatible temporal para que DataOutputService procese las fechas de forma limpia
+            df_para_normalizar = df_editado_prog.copy()
+            df_para_normalizar["ID Estacion"] = id_estacion_actual_raw
+            
+            # Mapear las etiquetas de fecha de vuelta a sus strings YYYY-MM-DD originales para la normalización
+            for idx, col_label in enumerate(columnas_fechas_labels):
+                f_str = columnas_fechas_strs[idx]
+                df_para_normalizar[f_str] = df_para_normalizar[col_label]
+
             registros_prog = data_output.normalizar_programa_cargas(
-                df_editado=df_editado_prog,
+                df_editado=df_para_normalizar,
                 columnas_fechas_str=columnas_fechas_strs,
                 producto_target=prod_lower
             )
