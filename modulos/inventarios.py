@@ -29,21 +29,24 @@ def render_inventarios(supabase_client, usuario_actual, data_loader, OutputServi
     # Extraer la información básica de las estaciones asociadas
     estaciones_list = []
     for _, row in df_usr_filtrado.iterrows():
+        raw_id = str(row.get("id_estacion", "")).strip()
         est_data = row.get("estaciones")
         if isinstance(est_data, dict):
             estaciones_list.append({
-                "id_estacion": str(row.get("id_estacion", "")).lower().strip(),
-                "nombre": str(est_data.get("nombre", "")),
-                "plaza": str(est_data.get("plaza", ""))
+                "id_estacion_db": raw_id.lower(),
+                "id_estacion": raw_id.upper(),
+                "nombre": str(est_data.get("nombre", "")).title(),
+                "plaza": str(est_data.get("plaza", "")).title()
             })
         else:
             estaciones_list.append({
-                "id_estacion": str(row.get("id_estacion", "")).lower().strip(),
+                "id_estacion_db": raw_id.lower(),
+                "id_estacion": raw_id.upper(),
                 "nombre": "",
                 "plaza": ""
             })
 
-    df_base_estaciones = pd.DataFrame(estaciones_list).drop_duplicates(subset=["id_estacion"])
+    df_base_estaciones = pd.DataFrame(estaciones_list).drop_duplicates(subset=["id_estacion_db"])
 
     # ---------------------------------------------------------
     # 1. FILTRO DE FECHA
@@ -63,26 +66,21 @@ def render_inventarios(supabase_client, usuario_actual, data_loader, OutputServi
 
     if not df_inv_fecha.empty and "producto" in df_inv_fecha.columns and "volumen" in df_inv_fecha.columns:
         df_pivot = df_inv_fecha.pivot(index="id_estacion", columns="producto", values="volumen").reset_index()
+        df_pivot = df_pivot.rename(columns={"id_estacion": "id_estacion_db"})
     else:
-        df_pivot = pd.DataFrame(columns=["id_estacion"])
+        df_pivot = pd.DataFrame(columns=["id_estacion_db"])
 
     for prod in ["regular", "premium", "diesel"]:
         if prod not in df_pivot.columns:
             df_pivot[prod] = None
 
-    df_matriz = pd.merge(df_base_estaciones, df_pivot[["id_estacion", "regular", "premium", "diesel"]], on="id_estacion", how="left")
-
-    # Aplicar formato visual para la interfaz (ID en mayúscula E#####, Nombre y Plaza en Nombre Propio)
-    if not df_matriz.empty:
-        df_matriz["id_estacion"] = df_matriz["id_estacion"].str.upper()
-        df_matriz["nombre"] = df_matriz["nombre"].str.title()
-        df_matriz["plaza"] = df_matriz["plaza"].str.title()
+    df_matriz = pd.merge(df_base_estaciones, df_pivot[["id_estacion_db", "regular", "premium", "diesel"]], on="id_estacion_db", how="left")
 
     df_matriz["Regular"] = df_matriz["regular"]
     df_matriz["Premium"] = df_matriz["premium"]
     df_matriz["Diesel"] = df_matriz["diesel"]
 
-    df_matriz = df_matriz.drop(columns=["regular", "premium", "diesel"], errors="ignore")
+    df_matriz = df_matriz.drop(columns=["regular", "premium", "diesel", "id_estacion_db"], errors="ignore")
 
     df_matriz = df_matriz.rename(columns={
         "id_estacion": "ID Estacion",
