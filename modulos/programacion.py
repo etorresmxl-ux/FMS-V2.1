@@ -197,11 +197,11 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
 
         df_matriz_prod = pd.DataFrame(matriz_data)
 
-        # Formateo visual: enteros con separador de millares y D/S como porcentaje
+        # Formateo visual: enteros con separador de millares y D/S como número con un decimal
         df_display = df_matriz_prod.copy()
         for col in columnas_fechas:
             df_display[col] = df_display.apply(
-                lambda row: f"{int(row[col]):,}" if row["Concepto"] != "D/S" else f"{row[col]:.1%}",
+                lambda row: f"{int(row[col]):,}" if row["Concepto"] != "D/S" else f"{row[col]:.1f}",
                 axis=1
             )
 
