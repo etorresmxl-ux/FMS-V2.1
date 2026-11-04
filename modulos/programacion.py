@@ -107,7 +107,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         prod_lower = str(producto).lower().strip()
         color_titulo = colores_acento.get(prod_lower, "black")
         
-        st.markdown(f"### Producto: <span style='color:{color_titulo};'>{str(producto).upper()}</span>", unsafe_allow_html=True)
+        st.markdown(f"### <span style='color:{color_titulo};'>{str(producto).upper()}</span>", unsafe_allow_html=True)
 
         # Configuración del tanque para este producto
         tanque_prod = tanques_estacion[tanques_estacion["producto"] == producto].iloc[0]
@@ -211,4 +211,3 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
             use_container_width=True,
             hide_index=True
         )
-        st.markdown("---")
