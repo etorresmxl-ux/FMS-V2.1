@@ -4,6 +4,7 @@ from servicios.database import get_supabase_client
 from servicios.data_loader import DataLoaderService
 from modulos.inventarios import render_inventarios
 from modulos.programacion import render_programacion
+from servicios.output_service import OutputService
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -12,52 +13,29 @@ st.set_page_config(
     layout="wide"
 )
 
-# Obtener la instancia centralizada de Supabase y DataLoader
-supabase = get_supabase_client()
-data_loader = DataLoaderService(supabase)
-
 def main():
-    # Todo lo que se encuentre dentro de 'with st.sidebar:' aparecerá en el menú lateral
-    with st.sidebar:
-        st.title("Fuel Management System")
-        st.markdown("---")
-        
-        # Cargar datos maestros centralizados en memoria con caché
-        datos_maestros = data_loader.cargar_datos_maestros()
-        lista_usuarios = datos_maestros.get("usuarios", ["Brenda", "Daniela", "Jazmin", "Yesenia"])
-        
-        # Almacenar inventarios globales en session_state para acceso rápido en la sesión
-        st.session_state["df_inventarios_global"] = datos_maestros.get("inventarios", pd.DataFrame())
-        
-        # Selector de usuario integrado en la barra lateral
-        if lista_usuarios:
-            usuario_actual = st.selectbox("Usuario:", options=lista_usuarios)
-        else:
-            usuario_actual = st.text_input("Usuario:", value="Programador")
-            st.warning("No se encontraron registros de usuarios en la base de datos.")
-        
-        st.markdown("---")
-        
-        # Catálogo de módulos / Menú Principal de navegación en la barra lateral
-        selected = st.radio(
-            "Menú Principal",
-            options=["Inventarios", "Ventas", "Programación"],
-            index=0
-        )
-        
-        st.markdown("---")
-        st.info("Sistema de Gestión de Combustibles conectado a Supabase.")
+    # Obtener la instancia centralizada de Supabase y DataLoader
+    supabase = get_supabase_client()
+    data_loader = DataLoaderService(supabase)
 
-    # Enrutamiento de vistas según la selección del menú lateral
-    if selected == "Inventarios":
+    # Simulación o gestión del usuario actual (ajusta según tu lógica de autenticación)
+    if "usuario_actual" not in st.session_state:
+        st.session_state["usuario_actual"] = "admin"  # Usuario por defecto o dinámico
+
+    usuario_actual = st.session_state["usuario_actual"]
+
+    # Menú lateral de navegación
+    st.sidebar.title("Navegación")
+    opcion = st.sidebar.radio("Seleccionar Módulo", ["Inventarios", "Programación"])
+
+    st.sidebar.markdown("---")
+    st.sidebar.write(f"Usuario activo: **{usuario_actual}**")
+
+    # Enrutamiento de vistas según la opción seleccionada
+    if opcion == "Inventarios":
         render_inventarios(supabase, usuario_actual, data_loader, OutputService)
-        
-    elif selected == "Ventas":
-        st.subheader("Módulo de Ventas")
-        st.info("Próximamente: Registro y control histórico de ventas.")
-        
-    elif selected == "Programación":
+    elif opcion == "Programación":
         render_programacion(supabase, usuario_actual, data_loader)
-        
+
 if __name__ == "__main__":
     main()
