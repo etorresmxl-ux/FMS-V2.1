@@ -50,45 +50,41 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
 
     fecha_str = fecha_seleccionada.strftime("%Y-%m-%d")
 
-    # Obtener registros preexistentes para la fecha seleccionada
+    # ---------------------------------------------------------
+    # 2. CONSTRUCCIÓN DE LA TABLA MATRIZ
+    # ---------------------------------------------------------
     df_inv_fecha = pd.DataFrame()
     if not df_inventarios_cache.empty and "fecha" in df_inventarios_cache.columns:
         df_inv_fecha = df_inventarios_cache[df_inventarios_cache["fecha"].astype(str) == fecha_str]
 
-    # ---------------------------------------------------------
-    # 2. CONSTRUCCIÓN DE LA TABLA MATRIZ
-    # ---------------------------------------------------------
-    # Pivotar los inventarios existentes en columnas: regular, premium, diesel
-    if not df_inv_fecha.empty:
+    if not df_inv_fecha.empty and "producto" in df_inv_fecha.columns and "volumen" in df_inv_fecha.columns:
         df_pivot = df_inv_fecha.pivot(index="id_estacion", columns="producto", values="volumen").reset_index()
     else:
-        df_pivot = pd.DataFrame(columns=["id_estacion", "regular", "premium", "diesel"])
+        df_pivot = pd.DataFrame(columns=["id_estacion"])
 
-    # Asegurar la presencia de las columnas requeridas
     for prod in ["regular", "premium", "diesel"]:
         if prod not in df_pivot.columns:
             df_pivot[prod] = None
 
-    # Unir la matriz base de estaciones con los inventarios cargados
-    df_matriz = pd.merge(df_base_estaciones, df_pivot, on="id_estacion", how="left")
+    df_matriz = pd.merge(df_base_estaciones, df_pivot[["id_estacion", "regular", "premium", "diesel"]], on="id_estacion", how="left")
 
-    # Renombrar columnas para la visualización
+    df_matriz["Regular"] = df_matriz["regular"]
+    df_matriz["Premium"] = df_matriz["premium"]
+    df_matriz["Diesel"] = df_matriz["diesel"]
+
+    df_matriz = df_matriz.drop(columns=["regular", "premium", "diesel"], errors="ignore")
+
     df_matriz = df_matriz.rename(columns={
         "id_estacion": "ID Estacion",
         "nombre": "Nombre",
-        "plaza": "Plaza",
-        "regular": "Regular",
-        "premium": "Premium",
-        "diesel": "Diesel"
+        "plaza": "Plaza"
     })
 
-    # Asegurar el orden exacto solicitado para las columnas
     columnas_orden = ["ID Estacion", "Nombre", "Plaza", "Regular", "Premium", "Diesel"]
     df_matriz = df_matriz[columnas_orden]
 
     st.info(f"Mostrando matriz de inventarios para el día: **{fecha_str}**")
 
-    # Mostrar la tabla interactiva de edición
     df_editado = st.data_editor(
         df_matriz,
         use_container_width=True,
@@ -105,7 +101,6 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
     # 3. BOTÓN DE GUARDAR / ACTUALIZAR REGISTRO
     # ---------------------------------------------------------
     if st.button("Guardar / Actualizar Registro", type="primary"):
-        # Convertir nombres de columnas formateados al estándar para la validación
         df_normalizar = df_editado.rename(columns={
             "ID Estacion": "id_estacion",
             "Regular": "regular",
@@ -123,18 +118,15 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
                 st.warning("No hay valores de inventario ingresados para guardar.")
                 return
 
-            # Asignar la fecha seleccionada a cada uno de los registros normalizados
             for reg in registros:
                 reg["fecha"] = fecha_str
 
             try:
-                # Realizar el Upsert en Supabase basado en las claves (id_estacion, fecha, producto)
                 supabase_client.table("inventarios").upsert(
                     registros,
                     on_conflict="id_estacion,fecha,producto"
                 ).execute()
 
-                # Limpiar la caché explícitamente para sincronizar los cambios
                 data_loader.invalidar_inventarios()
 
                 st.success(f"¡Inventarios actualizados correctamente para el {fecha_str}!")
