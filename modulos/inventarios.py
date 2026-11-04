@@ -26,7 +26,7 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
         st.warning(f"El usuario '{usuario_actual}' no tiene estaciones asignadas en este momento.")
         return
 
-    # Extraer la información básica de las estaciones asociadas
+    # Extraer la información básica de las estaciones asociadas en MAYÚSCULAS
     estaciones_list = []
     for _, row in df_usr_filtrado.iterrows():
         raw_id = str(row.get("id_estacion", "")).strip()
@@ -35,7 +35,7 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
             estaciones_list.append({
                 "id_estacion_db": raw_id.lower(),
                 "id_estacion": raw_id.upper(),
-                "nombre": str(est_data.get("nombre", "")).title(),
+                "nombre": str(est_data.get("nombre", "")).upper(),
                 "plaza": str(est_data.get("plaza", "")).title()
             })
         elif isinstance(est_data, list) and len(est_data) > 0:
@@ -43,7 +43,7 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
             estaciones_list.append({
                 "id_estacion_db": raw_id.lower(),
                 "id_estacion": raw_id.upper(),
-                "nombre": str(est_dict.get("nombre", "")).title(),
+                "nombre": str(est_dict.get("nombre", "")).upper(),
                 "plaza": str(est_dict.get("plaza", "")).title()
             })
         else:
