@@ -4,7 +4,6 @@ from servicios.database import get_supabase_client
 from servicios.data_loader import DataLoaderService
 from modulos.inventarios import render_inventarios
 from modulos.programacion import render_programacion
-from servicios.output_service import OutputService
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -31,9 +30,9 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.write(f"Usuario activo: **{usuario_actual}**")
 
-    # Enrutamiento de vistas según la opción seleccionada
+    # Enrutamiento de vistas según la opción seleccionada (pasando los 3 argumentos estándar)
     if opcion == "Inventarios":
-        render_inventarios(supabase, usuario_actual, data_loader, OutputService)
+        render_inventarios(supabase, usuario_actual, data_loader)
     elif opcion == "Programación":
         render_programacion(supabase, usuario_actual, data_loader)
 
