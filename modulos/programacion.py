@@ -4,14 +4,14 @@ import streamlit as st
 
 def render_programacion(supabase_client, usuario_actual, data_loader):
     st.subheader("Módulo de Programación de Cargas")
-
+    
     # 1. Cargar datos maestros e inventarios estructurados
     datos_maestros = data_loader.cargar_datos_maestros()
     df_usr = datos_maestros.get("estaciones_usuario", pd.DataFrame())
     df_tanques = datos_maestros.get("tanques_estaciones", pd.DataFrame())
     df_vdp = datos_maestros.get("vdp_ponderada", pd.DataFrame())
     df_factor = datos_maestros.get("factor_diasemanal", pd.DataFrame())
-    
+
     df_inventarios = data_loader.cargar_inventarios()
 
     # Normalizar usuario actual
@@ -82,7 +82,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         return
 
     tanques_estacion = df_tanques[df_tanques["id_estacion"] == id_estacion_actual]
-    
+
     if tanques_estacion.empty:
         st.info(f"La estación '{estacion_sel}' no tiene tanques configurados.")
         return
@@ -97,8 +97,17 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
     # ---------------------------------------------------------
     # 4. GENERAR MATRIZ POR CADA PRODUCTO DISPONIBLE
     # ---------------------------------------------------------
+    colores_acento = {
+        "regular": "green",
+        "premium": "darkorange",
+        "diesel": "dimgray"
+    }
+
     for producto in productos_disponibles:
-        st.markdown(f"### Producto: **{str(producto).upper()}**")
+        prod_lower = str(producto).lower().strip()
+        color_titulo = colores_acento.get(prod_lower, "black")
+        
+        st.markdown(f"### Producto: <span style='color:{color_titulo};'>{str(producto).upper()}</span>", unsafe_allow_html=True)
 
         # Configuración del tanque para este producto
         tanque_prod = tanques_estacion[tanques_estacion["producto"] == producto].iloc[0]
@@ -154,13 +163,13 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
             inv_final_dia = inv_inicial_dia + carga_prog_dia - venta_est_dia
             ds_dia = (inv_final_dia / vdp_ponderada) if vdp_ponderada > 0 else 0.0
 
-            # Guardar valores redondeados a 2 decimales
-            row_inv_inicial.append(round(inv_inicial_dia, 2))
-            row_cap_carga.append(round(cap_carga_dia, 2))
-            row_carga_prog.append(round(carga_prog_dia, 2))
-            row_venta_est.append(round(venta_est_dia, 2))
-            row_inv_final.append(round(inv_final_dia, 2))
-            row_ds.append(round(ds_dia, 2))
+            # Guardar valores redondeados
+            row_inv_inicial.append(round(inv_inicial_dia))
+            row_cap_carga.append(round(cap_carga_dia))
+            row_carga_prog.append(round(carga_prog_dia))
+            row_venta_est.append(round(venta_est_dia))
+            row_inv_final.append(round(inv_final_dia))
+            row_ds.append(round(ds_dia, 4))
 
             inv_corrido = inv_final_dia
 
@@ -188,9 +197,17 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
 
         df_matriz_prod = pd.DataFrame(matriz_data)
 
+        # Formateo visual: enteros con separador de millares y D/S como porcentaje
+        df_display = df_matriz_prod.copy()
+        for col in columnas_fechas:
+            df_display[col] = df_display.apply(
+                lambda row: f"{int(row[col]):,}" if row["Concepto"] != "D/S" else f"{row[col]:.1%}",
+                axis=1
+            )
+
         # Mostrar matriz formateada en Streamlit
         st.dataframe(
-            df_matriz_prod,
+            df_display,
             use_container_width=True,
             hide_index=True
         )
