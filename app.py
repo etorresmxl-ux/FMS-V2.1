@@ -50,7 +50,7 @@ def main():
 
     # Enrutamiento de vistas según la selección del menú lateral
     if selected == "Inventarios":
-        render_inventarios(supabase, usuario_actual, data_loader)
+        render_inventarios(supabase, usuario_actual, data_loader, OutputService)
         
     elif selected == "Ventas":
         st.subheader("Módulo de Ventas")
