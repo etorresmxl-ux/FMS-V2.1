@@ -1,213 +1,156 @@
 import datetime
 import pandas as pd
 import streamlit as st
+from servicios.data_output import DataOutputService
 
-def render_programacion(supabase_client, usuario_actual, data_loader):
-    st.subheader("Módulo de Programación de Cargas")
-    
-    # 1. Cargar datos maestros e inventarios estructurados
+def render_programacion(supabase_client, data_loader, usuario_actual):
+    st.markdown("## 📊 Módulo de Programación de Cargas")
+
+    # Inicializar el servicio de normalización de salidas
+    data_output = DataOutputService()
+
+    # 1. Cargar datos maestros e inventarios/proyecciones necesarios
     datos_maestros = data_loader.cargar_datos_maestros()
     df_usr = datos_maestros.get("estaciones_usuario", pd.DataFrame())
-    df_tanques = datos_maestros.get("tanques_estaciones", pd.DataFrame())
-    df_vdp = datos_maestros.get("vdp_ponderada", pd.DataFrame())
-    df_factor = datos_maestros.get("factor_diasemanal", pd.DataFrame())
 
-    df_inventarios = data_loader.cargar_inventarios()
-
-    # Normalizar usuario actual
+    # Normalizar usuario actual a minúsculas
     usuario_norm = str(usuario_actual).lower().strip()
 
-    # Filtrar estaciones según el usuario actual
-    if not df_usr.empty and "usuario" in df_usr.columns:
+    # Filtrar estaciones del usuario
+    if not df_usr.empty:
         df_usr_filtrado = df_usr[df_usr["usuario"] == usuario_norm]
     else:
         df_usr_filtrado = pd.DataFrame()
 
     if df_usr_filtrado.empty:
-        st.warning(f"El usuario '{usuario_actual}' no tiene estaciones asignadas.")
+        st.warning(f"El usuario '{usuario_actual}' no tiene estaciones asignadas en este momento.")
         return
 
-    # Extraer lista de estaciones asociadas de forma robusta
+    # Extraer estaciones base (id_estacion_db en minúsculas para cruces, id_estacion y nombre originales)
     estaciones_list = []
     for _, row in df_usr_filtrado.iterrows():
+        raw_id = str(row.get("id_estacion", "")).strip()
         est_data = row.get("estaciones")
         if isinstance(est_data, dict):
             estaciones_list.append({
-                "id_estacion": str(row.get("id_estacion", "")).lower().strip(),
-                "nombre": est_data.get("nombre", ""),
-                "plaza": est_data.get("plaza", "")
+                "id_estacion_db": raw_id.lower(),
+                "id_estacion": raw_id,
+                "nombre": str(est_data.get("nombre", "")),
+                "plaza": str(est_data.get("plaza", ""))
             })
         elif isinstance(est_data, list) and len(est_data) > 0:
             est_dict = est_data[0]
             estaciones_list.append({
-                "id_estacion": str(row.get("id_estacion", "")).lower().strip(),
-                "nombre": est_dict.get("nombre", ""),
-                "plaza": est_dict.get("plaza", "")
+                "id_estacion_db": raw_id.lower(),
+                "id_estacion": raw_id,
+                "nombre": str(est_dict.get("nombre", "")),
+                "plaza": str(est_dict.get("plaza", ""))
+            })
+        else:
+            estaciones_list.append({
+                "id_estacion_db": raw_id.lower(),
+                "id_estacion": raw_id,
+                "nombre": "",
+                "plaza": ""
             })
 
-    df_base_estaciones = pd.DataFrame(estaciones_list).drop_duplicates(subset=["id_estacion"])
+    df_base_estaciones = pd.DataFrame(estaciones_list).drop_duplicates(subset=["id_estacion_db"])
 
-    if df_base_estaciones.empty or "plaza" not in df_base_estaciones.columns:
-        st.warning("No se encontraron detalles válidos para las estaciones del usuario.")
-        return
+    # Lista de productos a manejar en el sistema
+    productos_objetivo = ["regular", "premium", "diesel"]
 
-    # ---------------------------------------------------------
-    # 2. FILTROS INICIALES: PLAZA Y ESTACIÓN
-    # ---------------------------------------------------------
-    plazas_disponibles = sorted(list(df_base_estaciones["plaza"].dropna().unique()))
-    if not plazas_disponibles:
-        st.warning("No hay plazas disponibles para mostrar.")
-        return
+    # Generar rango de fechas para los próximos 14 días
+    hoy = datetime.date.today()
+    fechas_14d = [hoy + datetime.timedelta(days=i) for i in range(14)]
+    columnas_fechas_strs = [f.strftime("%Y-%m-%d") for f in fechas_14d]
 
-    col_plaza, col_estacion = st.columns(2)
+    # Iterar sobre cada producto para mostrar su matriz de proyección y su tabla de programa de cargas debajo
+    for producto in productos_objetivo:
+        st.markdown("---")
+        st.markdown(f"### ⛽ Producto: {producto.upper()}")
 
-    with col_plaza:
-        plaza_sel = st.selectbox("Seleccionar Plaza:", options=plazas_disponibles)
+        # Simulación / Renderizado de la matriz principal de proyección del producto (ejemplo visual o espacio reservado)
+        st.info(f"Matriz de proyección y análisis para el producto **{producto.upper()}**.")
 
-    df_estaciones_plaza = df_base_estaciones[df_base_estaciones["plaza"] == plaza_sel]
-    nombres_estaciones = sorted(list(df_estaciones_plaza["nombre"].dropna().unique()))
+        # --- SECCIÓN: PROGRAMA DE CARGAS (14 DÍAS) ---
+        st.markdown(f"#### 📅 Programa de Cargas (14 días) - {producto.capitalize()}")
 
-    with col_estacion:
-        estacion_sel = st.selectbox("Seleccionar Estación:", options=nombres_estaciones)
+        # Cargar los programas existentes de Supabase para este producto y rango de fechas
+        try:
+            response = supabase_client.table("programa_cargas") \
+                .select("id_estacion, fecha, volumen") \
+                .eq("producto", producto.lower()) \
+                .in_("fecha", columnas_fechas_strs) \
+                .execute()
+            df_prog_existente = pd.DataFrame(response.data) if response.data else pd.DataFrame()
+        except Exception as e:
+            st.error(f"Error al cargar programa_cargas para {producto}: {e}")
+            df_prog_existente = pd.DataFrame()
 
-    # Identificar la estación seleccionada
-    estacion_info = df_estaciones_plaza[df_estaciones_plaza["nombre"] == estacion_sel].iloc[0]
-    id_estacion_actual = estacion_info["id_estacion"]
+        # Construir la matriz pivotada (Estaciones x 14 Días)
+        if not df_prog_existente.empty:
+            df_pivot_prog = df_prog_existente.pivot(index="id_estacion", columns="fecha", values="volumen").reset_index()
+            df_pivot_prog = df_pivot_prog.rename(columns={"id_estacion": "id_estacion_db"})
+        else:
+            df_pivot_prog = pd.DataFrame(columns=["id_estacion_db"])
 
-    # ---------------------------------------------------------
-    # 3. IDENTIFICAR PRODUCTOS DISPONIBLES EN LA ESTACIÓN
-    # ---------------------------------------------------------
-    if df_tanques.empty or "id_estacion" not in df_tanques.columns:
-        st.info("No hay información de tanques cargada en el sistema.")
-        return
+        # Asegurar que todas las columnas de fechas existan
+        for f_str in columnas_fechas_strs:
+            if f_str not in df_pivot_prog.columns:
+                df_pivot_prog[f_str] = None
 
-    tanques_estacion = df_tanques[df_tanques["id_estacion"] == id_estacion_actual]
+        # Fusionar con las estaciones base
+        df_matriz_prog = pd.merge(df_base_estaciones, df_pivot_prog, on="id_estacion_db", how="left")
 
-    if tanques_estacion.empty:
-        st.info(f"La estación '{estacion_sel}' no tiene tanques configurados.")
-        return
+        # Renombrar columnas para la visualización amigable
+        renombres = {"id_estacion": "ID Estacion", "nombre": "Nombre", "plaza": "Plaza"}
+        df_matriz_prog = df_matriz_prog.rename(columns=renombres)
 
-    productos_disponibles = tanques_estacion["producto"].dropna().unique()
+        # Ordenar columnas: Datos de estación + 14 fechas
+        columnas_orden = ["ID Estacion", "Nombre", "Plaza"] + columnas_fechas_strs
+        df_matriz_prog = df_matriz_prog[[c for c in columnas_orden if c in df_matriz_prog.columns]]
 
-    # Definir rango de 14 días a partir de hoy
-    fecha_hoy = datetime.date.today()
-    fechas_14d = [fecha_hoy + datetime.timedelta(days=i) for i in range(14)]
-    columnas_fechas = [f.strftime("%a %d-%b") for f in fechas_14d]
-
-    # ---------------------------------------------------------
-    # 4. GENERAR MATRIZ POR CADA PRODUCTO DISPONIBLE
-    # ---------------------------------------------------------
-    colores_acento = {
-        "regular": "green",
-        "premium": "darkorange",
-        "diesel": "dimgray"
-    }
-
-    for producto in productos_disponibles:
-        prod_lower = str(producto).lower().strip()
-        color_titulo = colores_acento.get(prod_lower, "black")
-        
-        st.markdown(f"### <span style='color:{color_titulo};'>{str(producto).upper()}</span>", unsafe_allow_html=True)
-
-        # Configuración del tanque para este producto
-        tanque_prod = tanques_estacion[tanques_estacion["producto"] == producto].iloc[0]
-        limite_max = tanque_prod.get("limite_max", 0)
-
-        # Obtener VDP Ponderada
-        vdp_ponderada = 0.0
-        if not df_vdp.empty and {"id_estacion", "producto"}.issubset(df_vdp.columns):
-            vdp_row = df_vdp[(df_vdp["id_estacion"] == id_estacion_actual) & (df_vdp["producto"] == producto)]
-            if not vdp_row.empty:
-                vdp_ponderada = float(vdp_row["vdp_ponderada"].values[0])
-
-        # Obtener Inventario Inicial del día de hoy utilizando el join de las 4 variables
-        inventario_actual_inicial = 0.0
-        if not df_inventarios.empty and {"id_estacion", "producto", "fecha"}.issubset(df_inventarios.columns):
-            inv_hoy_row = df_inventarios[
-                (df_inventarios["id_estacion"] == id_estacion_actual) &
-                (df_inventarios["producto"] == producto) &
-                (df_inventarios["fecha"] == fecha_hoy.strftime("%Y-%m-%d"))
-            ]
-            if not inv_hoy_row.empty:
-                inventario_actual_inicial = float(inv_hoy_row["volumen"].values[0])
-
-        # Inicialización de listas para almacenar los cálculos por día
-        row_inv_inicial = []
-        row_cap_carga = []
-        row_carga_prog = []
-        row_venta_est = []
-        row_inv_final = []
-        row_ds = []
-
-        inv_corrido = inventario_actual_inicial
-
-        for fecha in fechas_14d:
-            dia_sem = fecha.isoweekday()
-
-            # Obtener el factor de venta diario semanal
-            factor_venda = 1.0
-            if not df_factor.empty and {"id_estacion", "producto", "diasemanal"}.issubset(df_factor.columns):
-                factor_row = df_factor[
-                    (df_factor["id_estacion"] == id_estacion_actual) &
-                    (df_factor["producto"] == producto) &
-                    (df_factor["diasemanal"] == dia_sem)
-                ]
-                if not factor_row.empty:
-                    factor_venda = float(factor_row["factor"].values[0])
-
-            # Cálculos fórmula por fórmula
-            inv_inicial_dia = inv_corrido
-            cap_carga_dia = limite_max - inv_inicial_dia
-            carga_prog_dia = 0.0  # De momento en 0
-            venta_est_dia = vdp_ponderada * factor_venda
-            inv_final_dia = inv_inicial_dia + carga_prog_dia - venta_est_dia
-            ds_dia = (inv_final_dia / vdp_ponderada) if vdp_ponderada > 0 else 0.0
-
-            # Guardar valores redondeados
-            row_inv_inicial.append(round(inv_inicial_dia))
-            row_cap_carga.append(round(cap_carga_dia))
-            row_carga_prog.append(round(carga_prog_dia))
-            row_venta_est.append(round(venta_est_dia))
-            row_inv_final.append(round(inv_final_dia))
-            row_ds.append(round(ds_dia, 4))
-
-            inv_corrido = inv_final_dia
-
-        # Armar el DataFrame de la matriz
-        matriz_data = {
-            "Concepto": [
-                "Inventario Inicial",
-                "Capacidad de Carga",
-                "Carga Programada",
-                "Venta Estimada",
-                "Inventario Final",
-                "D/S"
-            ]
+        # Configurar las columnas de fecha como NumberColumn para edición (enteros)
+        column_config_dict = {
+            "ID Estacion": st.column_config.TextColumn("ID Estacion", disabled=True),
+            "Nombre": st.column_config.TextColumn("Nombre", disabled=True),
+            "Plaza": st.column_config.TextColumn("Plaza", disabled=True),
         }
-
-        for idx, col_nombre in enumerate(columnas_fechas):
-            matriz_data[col_nombre] = [
-                row_inv_inicial[idx],
-                row_cap_carga[idx],
-                row_carga_prog[idx],
-                row_venta_est[idx],
-                row_inv_final[idx],
-                row_ds[idx]
-            ]
-
-        df_matriz_prod = pd.DataFrame(matriz_data)
-
-        # Formateo visual: enteros con separador de millares y D/S como número con un decimal
-        df_display = df_matriz_prod.copy()
-        for col in columnas_fechas:
-            df_display[col] = df_display.apply(
-                lambda row: f"{int(row[col]):,}" if row["Concepto"] != "D/S" else f"{row[col]:.1f}",
-                axis=1
+        for f_str in columnas_fechas_strs:
+            f_dt = datetime.datetime.strptime(f_str, "%Y-%m-%d").date()
+            header_label = f_dt.strftime("%d/%b")
+            column_config_dict[f_str] = st.column_config.NumberColumn(
+                header_label, min_value=0, step=1, format="%,d"
             )
 
-        # Mostrar matriz formateada en Streamlit
-        st.dataframe(
-            df_display,
+        # Editor de datos interactivo en Streamlit
+        df_editado_prog = st.data_editor(
+            df_matriz_prog,
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            key=f"editor_prog_{producto}",
+            column_config=column_config_dict
         )
+
+        # Botón de Guardar específico para el producto actual
+        if st.button(f"Guardar Programa - {producto.capitalize()}", key=f"btn_save_prog_{producto}", type="primary"):
+            # Procesar y normalizar mediante DataOutputService (varchars en minúsculas, enteros en numéricos)
+            registros_prog = data_output.normalizar_programa_cargas(
+                df_editado=df_editado_prog,
+                columnas_fechas_str=columnas_fechas_strs,
+                producto_target=producto
+            )
+
+            if not registros_prog:
+                st.warning(f"⚠️ No hay volúmenes válidos ingresados para guardar en el programa de {producto}.")
+            else:
+                try:
+                    # Inserción o actualización masiva en Supabase respetando la restricción única
+                    supabase_client.table("programa_cargas").upsert(
+                        registros_prog,
+                        on_conflict="id_estacion,fecha,producto"
+                    ).execute()
+                    
+                    st.success(f"✅ Programa de cargas para **{producto.capitalize()}** guardado correctamente.")
+                except Exception as e:
+                    st.error(f"❌ Error al guardar el programa de cargas: {e}")
