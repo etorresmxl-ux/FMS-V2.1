@@ -85,8 +85,6 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
     columnas_orden = ["ID Estacion", "Nombre", "Plaza", "Regular", "Premium", "Diesel"]
     df_matriz = df_matriz[columnas_orden]
 
-    st.info(f"Mostrando matriz de inventarios para el día: **{fecha_str}**")
-
     # Mostrar la tabla interactiva de edición con altura fija de 600px
     df_editado = st.data_editor(
         df_matriz,
