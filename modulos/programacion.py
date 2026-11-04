@@ -15,7 +15,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
     df_inventarios = data_loader.cargar_inventarios()
 
     # Filtrar estaciones según el usuario actual
-    if not df_usr.empty:
+    if not df_usr.empty and "usuario" in df_usr.columns:
         df_usr_filtrado = df_usr[df_usr["usuario"] == usuario_actual]
     else:
         df_usr_filtrado = pd.DataFrame()
@@ -24,7 +24,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         st.warning(f"El usuario '{usuario_actual}' no tiene estaciones asignadas.")
         return
 
-    # Extraer lista de estaciones asociadas con nombre y plaza
+    # Extraer lista de estaciones asociadas (Soporta tanto dict como list devuelto por Supabase)
     estaciones_list = []
     for _, row in df_usr_filtrado.iterrows():
         est_data = row.get("estaciones")
@@ -34,24 +34,35 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
                 "nombre": est_data.get("nombre", ""),
                 "plaza": est_data.get("plaza", "")
             })
+        elif isinstance(est_data, list) and len(est_data) > 0:
+            est_dict = est_data[0]
+            estaciones_list.append({
+                "id_estacion": row.get("id_estacion"),
+                "nombre": est_dict.get("nombre", ""),
+                "plaza": est_dict.get("plaza", "")
+            })
 
     df_base_estaciones = pd.DataFrame(estaciones_list).drop_duplicates(subset=["id_estacion"])
 
-    if df_base_estaciones.empty:
-        st.warning("No se encontraron detalles para las estaciones del usuario.")
+    if df_base_estaciones.empty or "plaza" not in df_base_estaciones.columns:
+        st.warning("No se encontraron detalles válidos para las estaciones del usuario.")
         return
 
     # ---------------------------------------------------------
     # 2. FILTROS INICIALES: PLAZA Y ESTACIÓN
     # ---------------------------------------------------------
-    plazas_disponibles = sorted(list(df_base_estaciones["plaza"].unique()))
+    plazas_disponibles = sorted(list(df_base_estaciones["plaza"].dropna().unique()))
+    if not plazas_disponibles:
+        st.warning("No hay plazas disponibles para mostrar.")
+        return
+
     col_plaza, col_estacion = st.columns(2)
 
     with col_plaza:
         plaza_sel = st.selectbox("Seleccionar Plaza:", options=plazas_disponibles)
 
     df_estaciones_plaza = df_base_estaciones[df_base_estaciones["plaza"] == plaza_sel]
-    nombres_estaciones = sorted(list(df_estaciones_plaza["nombre"].unique()))
+    nombres_estaciones = sorted(list(df_estaciones_plaza["nombre"].dropna().unique()))
 
     with col_estacion:
         estacion_sel = st.selectbox("Seleccionar Estación:", options=nombres_estaciones)
@@ -63,6 +74,10 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
     # ---------------------------------------------------------
     # 3. IDENTIFICAR PRODUCTOS DISPONIBLES EN LA ESTACIÓN
     # ---------------------------------------------------------
+    if df_tanques.empty or "id_estacion" not in df_tanques.columns:
+        st.info("No hay información de tanques cargada en el sistema.")
+        return
+
     tanques_estacion = df_tanques[df_tanques["id_estacion"] == id_estacion_actual]
     
     if tanques_estacion.empty:
@@ -87,16 +102,25 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         limite_max = tanque_prod.get("limite_max", 0)
 
         # Obtener VDP Ponderada
-        vdp_row = df_vdp[(df_vdp["id_estacion"] == id_estacion_actual) & (df_vdp["producto"] == producto)]
-        vdp_ponderada = vdp_row["vdp_ponderada"].values[0] if not vdp_row.empty else 0.0
+        vdp_ponderada = 0.0
+        if not df_vdp.empty and {"id_estacion", "producto"}.issubset(df_vdp.columns):
+            vdp_row = df_vdp[(df_vdp["id_estacion"] == id_estacion_actual) & (df_vdp["producto"] == producto)]
+            if not vdp_row.empty:
+                vdp_ponderada = float(vdp_row["vdp_ponderada"].values[0])
 
-        # Obtener Inventario Inicial del día de hoy
-        inv_hoy_row = df_inventarios[
-            (df_inventarios["id_estacion"] == id_estacion_actual) &
-            (df_inventarios["producto"] == producto) &
-            (df_inventarios["fecha"].astype(str) == fecha_hoy.strftime("%Y-%m-%d"))
-        ]
-        inventario_actual_inicial = inv_hoy_row["volumen"].values[0] if not inv_hoy_row.empty else 0.0
+        # Obtener Inventario Inicial del día de hoy de forma segura
+        inventario_actual_inicial = 0.0
+        if not df_inventarios.empty and {"id_estacion", "producto", "fecha"}.issubset(df_inventarios.columns):
+            df_inv_filtrado = df_inventarios.copy()
+            df_inv_filtrado["fecha_str"] = pd.to_datetime(df_inv_filtrado["fecha"]).dt.strftime("%Y-%m-%d")
+            
+            inv_hoy_row = df_inv_filtrado[
+                (df_inv_filtrado["id_estacion"] == id_estacion_actual) &
+                (df_inv_filtrado["producto"] == producto) &
+                (df_inv_filtrado["fecha_str"] == fecha_hoy.strftime("%Y-%m-%d"))
+            ]
+            if not inv_hoy_row.empty:
+                inventario_actual_inicial = float(inv_hoy_row["volumen"].values[0])
 
         # Inicialización de listas para almacenar los cálculos por día
         row_inv_inicial = []
@@ -109,16 +133,18 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         inv_corrido = inventario_actual_inicial
 
         for fecha in fechas_14d:
-            # ISO dow: 1=Lunes, ..., 7=Domingo (coincide con isodow de Postgres)[cite: 6, 10]
             dia_sem = fecha.isoweekday()
 
-            # Obtener el factor de venta diario semanal[cite: 6]
-            factor_row = df_factor[
-                (df_factor["id_estacion"] == id_estacion_actual) &
-                (df_factor["producto"] == producto) &
-                (df_factor["diasemanal"] == dia_sem)
-            ]
-            factor_venda = factor_row["factor"].values[0] if not factor_row.empty else 1.0
+            # Obtener el factor de venta diario semanal
+            factor_venda = 1.0
+            if not df_factor.empty and {"id_estacion", "producto", "diasemanal"}.issubset(df_factor.columns):
+                factor_row = df_factor[
+                    (df_factor["id_estacion"] == id_estacion_actual) &
+                    (df_factor["producto"] == producto) &
+                    (df_factor["diasemanal"] == dia_sem)
+                ]
+                if not factor_row.empty:
+                    factor_venda = float(factor_row["factor"].values[0])
 
             # Cálculos fórmula por fórmula
             inv_inicial_dia = inv_corrido
@@ -136,7 +162,6 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
             row_inv_final.append(round(inv_final_dia, 2))
             row_ds.append(round(ds_dia, 2))
 
-            # El inventario final de hoy pasa a ser el inicial del día siguiente
             inv_corrido = inv_final_dia
 
         # Armar el DataFrame de la matriz
