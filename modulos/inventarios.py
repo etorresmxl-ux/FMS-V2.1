@@ -1,9 +1,8 @@
 import datetime
 import pandas as pd
 import streamlit as st
-from servicios.data_output import DataOutputService
 
-def render_inventarios(supabase_client, usuario_actual, data_loader):
+def render_inventarios(supabase_client, usuario_actual, data_loader, OutputService):
     st.subheader("Gestión de Inventarios")
 
     # 1. Cargar datos maestros estáticos e inventarios por separado
@@ -34,8 +33,8 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
         if isinstance(est_data, dict):
             estaciones_list.append({
                 "id_estacion": str(row.get("id_estacion", "")).lower().strip(),
-                "nombre": est_data.get("nombre", ""),
-                "plaza": est_data.get("plaza", "")
+                "nombre": str(est_data.get("nombre", "")),
+                "plaza": str(est_data.get("plaza", ""))
             })
         else:
             estaciones_list.append({
@@ -72,6 +71,12 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
             df_pivot[prod] = None
 
     df_matriz = pd.merge(df_base_estaciones, df_pivot[["id_estacion", "regular", "premium", "diesel"]], on="id_estacion", how="left")
+
+    # Aplicar formato visual para la interfaz (ID en mayúscula E#####, Nombre y Plaza en Nombre Propio)
+    if not df_matriz.empty:
+        df_matriz["id_estacion"] = df_matriz["id_estacion"].str.upper()
+        df_matriz["nombre"] = df_matriz["nombre"].str.title()
+        df_matriz["plaza"] = df_matriz["plaza"].str.title()
 
     df_matriz["Regular"] = df_matriz["regular"]
     df_matriz["Premium"] = df_matriz["premium"]
@@ -113,7 +118,7 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
             "Diesel": "diesel"
         })
 
-        output_service = DataOutputService()
+        output_service = OutputService()
         exito, mensaje, registros = output_service.validar_y_normalizar(df_normalizar, df_tanques)
 
         # Manejo de errores de validación de datos
