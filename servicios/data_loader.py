@@ -8,13 +8,9 @@ class DataLoaderService:
 
     @st.cache_data(ttl=3600)
     def cargar_datos_maestros(_self) -> dict:
-        """
-        Carga y cachea por 1 hora los datos maestros estáticos (usuarios, estaciones, tanques, vdp, factores).
-        """
         try:
             usuarios = ["Brenda", "Daniela", "Jazmin", "Yesenia"]
 
-            # Estaciones y usuarios
             res_usr = _self.supabase.table("estaciones_usuario").select("id_estacion, usuario, estaciones(id_estacion, nombre, plaza)").execute()
             df_usr = pd.DataFrame(res_usr.data) if res_usr.data else pd.DataFrame()
             
@@ -22,7 +18,6 @@ class DataLoaderService:
                 df_usr["id_estacion"] = df_usr["id_estacion"].astype(str).str.lower().str.strip()
                 df_usr["usuario"] = df_usr["usuario"].astype(str).str.lower().str.strip()
 
-            # Tanques de estaciones
             res_tanques = _self.supabase.table("tanques_estaciones").select("id_estacion, producto, limite_max").execute()
             df_tanques = pd.DataFrame(res_tanques.data) if res_tanques.data else pd.DataFrame()
             if not df_tanques.empty:
@@ -31,7 +26,6 @@ class DataLoaderService:
                 df_tanques["limite_max"] = pd.to_numeric(df_tanques["limite_max"], errors="coerce").fillna(0).astype(int)
                 df_tanques["limite_min"] = 5000
 
-            # VDP Ponderada
             res_vdp = _self.supabase.table("vdp_ponderada_12w").select("id_estacion, producto, vdp_ponderada").execute()
             df_vdp = pd.DataFrame(res_vdp.data) if res_vdp.data else pd.DataFrame()
             if not df_vdp.empty:
@@ -39,7 +33,6 @@ class DataLoaderService:
                 df_vdp["producto"] = df_vdp["producto"].astype(str).str.lower().str.strip()
                 df_vdp["vdp_ponderada"] = pd.to_numeric(df_vdp["vdp_ponderada"], errors="coerce").fillna(0).astype(int)
 
-            # Factores de venta día semanal
             res_diasemanal = _self.supabase.table("factor_venta_diasemanal").select("id_estacion, producto, diasemanal, factor").execute()
             df_diasemanal = pd.DataFrame(res_diasemanal.data) if res_diasemanal.data else pd.DataFrame()
             if not df_diasemanal.empty:
@@ -61,9 +54,6 @@ class DataLoaderService:
 
     @st.cache_data(ttl=3600)
     def cargar_inventarios(_self) -> pd.DataFrame:
-        """
-        Carga, normaliza y estructura los registros de inventarios desde Supabase.
-        """
         try:
             res_inv = _self.supabase.table("inventarios").select("id_estacion, fecha, producto, volumen").order("fecha", desc=True).execute()
             df = pd.DataFrame(res_inv.data) if res_inv.data else pd.DataFrame()
@@ -89,14 +79,10 @@ class DataLoaderService:
             return pd.DataFrame(columns=["id_estacion", "fecha", "producto", "volumen"])
 
     def invalidar_inventarios(self):
-        """Limpia de forma explícita y exclusiva la caché de los inventarios."""
         self.cargar_inventarios.clear()
 
     @st.cache_data(ttl=3600)
     def cargar_programa_cargas(_self) -> pd.DataFrame:
-        """
-        Carga y estructura los registros de programa_cargas limitado a los próximos 14 días.
-        """
         try:
             hoy = datetime.date.today()
             fechas_14d = [hoy + datetime.timedelta(days=i) for i in range(14)]
@@ -130,5 +116,4 @@ class DataLoaderService:
             return pd.DataFrame(columns=["id_estacion", "fecha", "producto", "volumen"])
 
     def invalidar_programa_cargas(self):
-        """Limpia de forma explícita y exclusiva la caché del programa de cargas."""
         self.cargar_programa_cargas.clear()
