@@ -7,42 +7,40 @@ class DataLoaderService:
         self.supabase = supabase_client
 
     @st.cache_data(ttl=3600)
-    def cargar_datos_maestros(self) -> dict:
+    def cargar_datos_maestros(_self) -> dict:
         """
         Carga y cachea por 1 hora los datos maestros estáticos (usuarios, estaciones, tanques, vdp, factores).
-        Normaliza todos los campos varchar a minúsculas y fuerza todos los datos numéricos a enteros 
-        (excepto el factor en factor_venta_diasemanal).
         """
         try:
             usuarios = ["Brenda", "Daniela", "Jazmin", "Yesenia"]
 
             # Estaciones y usuarios
-            res_usr = self.supabase.table("estaciones_usuario").select("id_estacion, usuario, estaciones(id_estacion, nombre, plaza)").execute()
+            res_usr = _self.supabase.table("estaciones_usuario").select("id_estacion, usuario, estaciones(id_estacion, nombre, plaza)").execute()
             df_usr = pd.DataFrame(res_usr.data) if res_usr.data else pd.DataFrame()
             
             if not df_usr.empty:
                 df_usr["id_estacion"] = df_usr["id_estacion"].astype(str).str.lower().str.strip()
                 df_usr["usuario"] = df_usr["usuario"].astype(str).str.lower().str.strip()
 
-            # Tanques de estaciones (limite_max como enteros)
-            res_tanques = self.supabase.table("tanques_estaciones").select("id_estacion, producto, limite_max").execute()
+            # Tanques de estaciones
+            res_tanques = _self.supabase.table("tanques_estaciones").select("id_estacion, producto, limite_max").execute()
             df_tanques = pd.DataFrame(res_tanques.data) if res_tanques.data else pd.DataFrame()
             if not df_tanques.empty:
                 df_tanques["id_estacion"] = df_tanques["id_estacion"].astype(str).str.lower().str.strip()
                 df_tanques["producto"] = df_tanques["producto"].astype(str).str.lower().str.strip()
                 df_tanques["limite_max"] = pd.to_numeric(df_tanques["limite_max"], errors="coerce").fillna(0).astype(int)
-                df_tanques["limite_min"] = 5000  # Entero
+                df_tanques["limite_min"] = 5000
 
-            # VDP Ponderada (vdp_ponderada como entero)
-            res_vdp = self.supabase.table("vdp_ponderada_12w").select("id_estacion, producto, vdp_ponderada").execute()
+            # VDP Ponderada
+            res_vdp = _self.supabase.table("vdp_ponderada_12w").select("id_estacion, producto, vdp_ponderada").execute()
             df_vdp = pd.DataFrame(res_vdp.data) if res_vdp.data else pd.DataFrame()
             if not df_vdp.empty:
                 df_vdp["id_estacion"] = df_vdp["id_estacion"].astype(str).str.lower().str.strip()
                 df_vdp["producto"] = df_vdp["producto"].astype(str).str.lower().str.strip()
                 df_vdp["vdp_ponderada"] = pd.to_numeric(df_vdp["vdp_ponderada"], errors="coerce").fillna(0).astype(int)
 
-            # Factores de venta día semanal (diasemanal entero, factor se mantiene como float)
-            res_diasemanal = self.supabase.table("factor_venta_diasemanal").select("id_estacion, producto, diasemanal, factor").execute()
+            # Factores de venta día semanal
+            res_diasemanal = _self.supabase.table("factor_venta_diasemanal").select("id_estacion, producto, diasemanal, factor").execute()
             df_diasemanal = pd.DataFrame(res_diasemanal.data) if res_diasemanal.data else pd.DataFrame()
             if not df_diasemanal.empty:
                 df_diasemanal["id_estacion"] = df_diasemanal["id_estacion"].astype(str).str.lower().str.strip()
@@ -62,17 +60,12 @@ class DataLoaderService:
             return {}
 
     @st.cache_data(ttl=3600)
-    def cargar_inventarios(self) -> pd.DataFrame:
+    def cargar_inventarios(_self) -> pd.DataFrame:
         """
         Carga, normaliza y estructura los registros de inventarios desde Supabase.
-        Estructura estándar garantizada de 4 variables:
-        - id_estacion
-        - fecha
-        - producto
-        - volumen (manejado estrictamente como entero)
         """
         try:
-            res_inv = self.supabase.table("inventarios").select("id_estacion, fecha, producto, volumen").order("fecha", desc=True).execute()
+            res_inv = _self.supabase.table("inventarios").select("id_estacion, fecha, producto, volumen").order("fecha", desc=True).execute()
             df = pd.DataFrame(res_inv.data) if res_inv.data else pd.DataFrame()
 
             columnas_requeridas = ["id_estacion", "fecha", "producto", "volumen"]
@@ -100,24 +93,16 @@ class DataLoaderService:
         self.cargar_inventarios.clear()
 
     @st.cache_data(ttl=3600)
-    def cargar_programa_cargas(self) -> pd.DataFrame:
+    def cargar_programa_cargas(_self) -> pd.DataFrame:
         """
-        Carga, normaliza y estructura los registros de programa_cargas desde Supabase 
-        limitado estrictamente a los próximos 14 días a partir de la fecha actual 
-        para no saturar la caché del data_loader.py.
-        Estructura estándar de 4 variables:
-        - id_estacion
-        - fecha
-        - producto
-        - volumen (manejado estrictamente como entero)
+        Carga y estructura los registros de programa_cargas limitado a los próximos 14 días.
         """
         try:
-            # Definir rango estricto de 14 días a partir de hoy
             hoy = datetime.date.today()
             fechas_14d = [hoy + datetime.timedelta(days=i) for i in range(14)]
             columnas_fechas_strs = [f.strftime("%Y-%m-%d") for f in fechas_14d]
 
-            res_prog = self.supabase.table("programa_cargas") \
+            res_prog = _self.supabase.table("programa_cargas") \
                 .select("id_estacion, fecha, producto, volumen") \
                 .in_("fecha", columnas_fechas_strs) \
                 .execute()
