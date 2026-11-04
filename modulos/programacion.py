@@ -39,22 +39,22 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         if isinstance(est_data, dict):
             estaciones_list.append({
                 "id_estacion_db": raw_id.lower(),
-                "id_estacion": raw_id,
-                "nombre": est_data.get("nombre", ""),
-                "plaza": est_data.get("plaza", "")
+                "id_estacion": raw_id.upper(),
+                "nombre": str(est_data.get("nombre", "")).upper(),
+                "plaza": str(est_data.get("plaza", "")).title()
             })
         elif isinstance(est_data, list) and len(est_data) > 0:
             est_dict = est_data[0]
             estaciones_list.append({
                 "id_estacion_db": raw_id.lower(),
-                "id_estacion": raw_id,
-                "nombre": est_dict.get("nombre", ""),
-                "plaza": est_dict.get("plaza", "")
+                "id_estacion": raw_id.upper(),
+                "nombre": str(est_dict.get("nombre", "")).upper(),
+                "plaza": str(est_dict.get("plaza", "")).title()
             })
         else:
             estaciones_list.append({
                 "id_estacion_db": raw_id.lower(),
-                "id_estacion": raw_id,
+                "id_estacion": raw_id.upper(),
                 "nombre": "",
                 "plaza": ""
             })
@@ -255,7 +255,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         # Construir formato tabular para st.data_editor (1 sola fila con los 14 días para la estación seleccionada)
         fila_editable = {"id_estacion": id_estacion_actual_raw, "Estación": estacion_sel}
         for idx, f_str in enumerate(columnas_fechas_strs):
-            fila_editable[f_str] = row_carga_prog[idx] if row_carga_prog[idx] > 0 else None
+            fila_editable[f_str] = int(row_carga_prog[idx]) if row_carga_prog[idx] > 0 else None
 
         df_editor_input = pd.DataFrame([fila_editable])
 
@@ -290,8 +290,6 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
             )
 
             try:
-                # Incluso si la lista está vacía, podemos guardar/limpiar o hacer upsert de lo registrado
-                # Realizamos el upsert masivo en Supabase respetando la restricción única (id_estacion, fecha, producto)
                 if registros_prog:
                     supabase_client.table("programa_cargas").upsert(
                         registros_prog,
