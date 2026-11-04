@@ -9,18 +9,6 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
     # Inicializar el servicio de normalización de salidas
     data_output = DataOutputService()
 
-    # Inyectar CSS para ocultar los encabezados (headers) de la tabla de edición si se desea
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stDataEditor"] thead {
-            display: none;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
     # 1. Cargar datos maestros e inventarios estructurados
     datos_maestros = data_loader.cargar_datos_maestros()
     df_usr = datos_maestros.get("estaciones_usuario", pd.DataFrame())
@@ -221,8 +209,9 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
 
             inv_corrido = inv_final_dia
 
-        # Armar etiquetas de columnas legibles para la matriz visual
-        columnas_fechas_labels = [f.strftime("%a %d-%b") for f in fechas_14d]
+        # Armar etiquetas de columnas para la matriz visual superior (ddd dd-mmm) y de escritura (dd-mmm)
+        columnas_fechas_labels_sup = [f.strftime("%a %d-%b") for f in fechas_14d]
+        columnas_fechas_labels_edit = [f.strftime("%d-%b") for f in fechas_14d]
 
         matriz_data = {
             "Concepto": [
@@ -235,7 +224,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
             ]
         }
 
-        for idx, col_nombre in enumerate(columnas_fechas_labels):
+        for idx, col_nombre in enumerate(columnas_fechas_labels_sup):
             matriz_data[col_nombre] = [
                 row_inv_inicial[idx],
                 row_cap_carga[idx],
@@ -248,7 +237,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         df_matriz_prod = pd.DataFrame(matriz_data)
 
         df_display = df_matriz_prod.copy()
-        for col in columnas_fechas_labels:
+        for col in columnas_fechas_labels_sup:
             df_display[col] = df_display.apply(
                 lambda row: f"{int(row[col]):,}" if row["Concepto"] != "D/S" else f"{row[col]:.1f}",
                 axis=1
@@ -262,23 +251,22 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         )
 
         # --- SECCIÓN: TABLA DE ESCRITURA / PROGRAMA DE CARGAS (14 DÍAS) ---
-        # Se eliminó la columna id_estacion y se renombró la segunda a "Programa" para que coincida exactamente en ancho/columnas
         fila_editable = {"id_estacion_db_hidden": id_estacion_actual_db, "Programa": "Carga Programada"}
         for idx, f_str in enumerate(columnas_fechas_strs):
-            col_label = columnas_fechas_labels[idx]
-            fila_editable[col_label] = int(row_carga_prog[idx]) if row_carga_prog[idx] > 0 else None
+            col_label_edit = columnas_fechas_labels_edit[idx]
+            fila_editable[col_label_edit] = int(row_carga_prog[idx]) if row_carga_prog[idx] > 0 else None
 
         df_editor_input = pd.DataFrame([fila_editable])
 
         # Configuración de columnas para el editor
         column_config_dict = {
-            "id_estacion_db_hidden": None,  # Oculta completamente esta columna auxiliar si es necesario
+            "id_estacion_db_hidden": None,  # Oculta columna auxiliar
             "Programa": st.column_config.TextColumn("Programa", disabled=True),
         }
 
-        for col_label in columnas_fechas_labels:
-            column_config_dict[col_label] = st.column_config.NumberColumn(
-                col_label, min_value=0, step=1, format="%,d"
+        for col_label_edit in columnas_fechas_labels_edit:
+            column_config_dict[col_label_edit] = st.column_config.NumberColumn(
+                col_label_edit, min_value=0, step=1, format="%,d"
             )
 
         df_editado_prog = st.data_editor(
@@ -291,14 +279,13 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
 
         # Botón para guardar el programa de cargas de este producto
         if st.button(f"Guardar Programa - {str(producto).capitalize()}", key=f"btn_save_prog_{prod_lower}_{id_estacion_actual_db}", type="primary"):
-            # Reconstruir un formato compatible temporal para que DataOutputService procese las fechas de forma limpia
             df_para_normalizar = df_editado_prog.copy()
             df_para_normalizar["ID Estacion"] = id_estacion_actual_raw
             
-            # Mapear las etiquetas de fecha de vuelta a sus strings YYYY-MM-DD originales para la normalización
-            for idx, col_label in enumerate(columnas_fechas_labels):
+            # Mapear las etiquetas de fecha simplificadas de vuelta a sus strings YYYY-MM-DD originales
+            for idx, col_label_edit in enumerate(columnas_fechas_labels_edit):
                 f_str = columnas_fechas_strs[idx]
-                df_para_normalizar[f_str] = df_para_normalizar[col_label]
+                df_para_normalizar[f_str] = df_para_normalizar[col_label_edit]
 
             registros_prog = data_output.normalizar_programa_cargas(
                 df_editado=df_para_normalizar,
