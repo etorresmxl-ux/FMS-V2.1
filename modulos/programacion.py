@@ -5,7 +5,7 @@ import streamlit as st
 def render_programacion(supabase_client, usuario_actual, data_loader):
     st.subheader("Módulo de Programación de Cargas")
 
-    # 1. Cargar datos maestros e inventarios
+    # 1. Cargar datos maestros e inventarios estructurados
     datos_maestros = data_loader.cargar_datos_maestros()
     df_usr = datos_maestros.get("estaciones_usuario", pd.DataFrame())
     df_tanques = datos_maestros.get("tanques_estaciones", pd.DataFrame())
@@ -14,9 +14,12 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
     
     df_inventarios = data_loader.cargar_inventarios()
 
+    # Normalizar usuario actual
+    usuario_norm = str(usuario_actual).lower().strip()
+
     # Filtrar estaciones según el usuario actual
     if not df_usr.empty and "usuario" in df_usr.columns:
-        df_usr_filtrado = df_usr[df_usr["usuario"] == usuario_actual]
+        df_usr_filtrado = df_usr[df_usr["usuario"] == usuario_norm]
     else:
         df_usr_filtrado = pd.DataFrame()
 
@@ -24,20 +27,20 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         st.warning(f"El usuario '{usuario_actual}' no tiene estaciones asignadas.")
         return
 
-    # Extraer lista de estaciones asociadas (Soporta tanto dict como list devuelto por Supabase)
+    # Extraer lista de estaciones asociadas de forma robusta
     estaciones_list = []
     for _, row in df_usr_filtrado.iterrows():
         est_data = row.get("estaciones")
         if isinstance(est_data, dict):
             estaciones_list.append({
-                "id_estacion": row.get("id_estacion"),
+                "id_estacion": str(row.get("id_estacion", "")).lower().strip(),
                 "nombre": est_data.get("nombre", ""),
                 "plaza": est_data.get("plaza", "")
             })
         elif isinstance(est_data, list) and len(est_data) > 0:
             est_dict = est_data[0]
             estaciones_list.append({
-                "id_estacion": row.get("id_estacion"),
+                "id_estacion": str(row.get("id_estacion", "")).lower().strip(),
                 "nombre": est_dict.get("nombre", ""),
                 "plaza": est_dict.get("plaza", "")
             })
@@ -84,7 +87,7 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
         st.info(f"La estación '{estacion_sel}' no tiene tanques configurados.")
         return
 
-    productos_disponibles = tanques_estacion["producto"].unique()
+    productos_disponibles = tanques_estacion["producto"].dropna().unique()
 
     # Definir rango de 14 días a partir de hoy
     fecha_hoy = datetime.date.today()
@@ -108,16 +111,13 @@ def render_programacion(supabase_client, usuario_actual, data_loader):
             if not vdp_row.empty:
                 vdp_ponderada = float(vdp_row["vdp_ponderada"].values[0])
 
-        # Obtener Inventario Inicial del día de hoy de forma segura
+        # Obtener Inventario Inicial del día de hoy utilizando el join de las 4 variables
         inventario_actual_inicial = 0.0
         if not df_inventarios.empty and {"id_estacion", "producto", "fecha"}.issubset(df_inventarios.columns):
-            df_inv_filtrado = df_inventarios.copy()
-            df_inv_filtrado["fecha_str"] = pd.to_datetime(df_inv_filtrado["fecha"]).dt.strftime("%Y-%m-%d")
-            
-            inv_hoy_row = df_inv_filtrado[
-                (df_inv_filtrado["id_estacion"] == id_estacion_actual) &
-                (df_inv_filtrado["producto"] == producto) &
-                (df_inv_filtrado["fecha_str"] == fecha_hoy.strftime("%Y-%m-%d"))
+            inv_hoy_row = df_inventarios[
+                (df_inventarios["id_estacion"] == id_estacion_actual) &
+                (df_inventarios["producto"] == producto) &
+                (df_inventarios["fecha"] == fecha_hoy.strftime("%Y-%m-%d"))
             ]
             if not inv_hoy_row.empty:
                 inventario_actual_inicial = float(inv_hoy_row["volumen"].values[0])
