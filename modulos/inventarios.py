@@ -115,27 +115,30 @@ def render_inventarios(supabase_client, usuario_actual, data_loader):
         output_service = DataOutputService()
         exito, mensaje, registros = output_service.validar_y_normalizar(df_normalizar, df_tanques)
 
+        # Manejo de errores de validación de datos
         if not exito:
-            st.error(mensaje)
+            st.error(f"❌ **Error de validación:** {mensaje}")
         else:
             if not registros:
-                st.warning("No hay valores de inventario ingresados para guardar.")
-                return
+                st.warning("⚠️ No hay valores de inventario ingresados para guardar.")
+            else:
+                for reg in registros:
+                    reg["fecha"] = fecha_str
 
-            for reg in registros:
-                reg["fecha"] = fecha_str
+                try:
+                    # Inserción o actualización en Supabase
+                    supabase_client.table("inventarios").upsert(
+                        registros,
+                        on_conflict="id_estacion,fecha,producto"
+                    ).execute()
 
-            try:
-                supabase_client.table("inventarios").upsert(
-                    registros,
-                    on_conflict="id_estacion,fecha,producto"
-                ).execute()
+                    # Refrescar y limpiar la caché exclusivamente para inventarios
+                    data_loader.invalidar_inventarios()
 
-                # Refrescar y limpiar la caché exclusivamente para inventarios
-                data_loader.invalidar_inventarios()
+                    # Mensaje de información correcta al guardar con éxito
+                    st.success(f"✅ ¡Inventarios actualizados y guardados correctamente para el día {fecha_str}!")
+                    st.rerun()
 
-                st.success(f"¡Inventarios actualizados correctamente para el {fecha_str}!")
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"Error al guardar los datos en Supabase: {e}")
+                except Exception as e:
+                    # Mensaje de error detallado ante fallos de conexión o base de datos
+                    st.error(f"❌ **Error al guardar los datos en Supabase:** {e}")
