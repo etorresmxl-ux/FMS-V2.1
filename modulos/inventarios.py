@@ -2,119 +2,111 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from servicios.validacion import ValidadorInventario
+from servicios.data_loader import DataLoaderService
 
 def render_inventarios(supabase_client, usuario_actual: str):
     st.subheader("Gestión de Inventarios")
-
-    # 1. Filtro por fecha
-    fecha_seleccionada = st.date_input("Seleccione la fecha de inventario", value=date.today())
-
-    # 2. Obtener estaciones permitidas para el usuario actual (con caché para rendimiento)
-    @st.cache_data(ttl=60)
-    def cargar_estaciones_usuario(usuario):
-        res_usr = supabase_client.table("estaciones_usuario").select("id_estacion").eq("usuario", usuario).execute()
-        ids = [item["id_estacion"] for item in res_usr.data]
-        if not ids:
-            return pd.DataFrame()
+    
+    # 1. Instanciar el servicio de carga de datos y obtener los datos maestros cacheados
+    data_loader = DataLoaderService(supabase_client)
+    datos_maestros = data_loader.cargar_datos_maestros()
+    
+    # 2. Extraer catálogos e inventarios desde la estructura centralizada
+    df_usr = datos_maestros.get("estaciones_usuario", pd.DataFrame())
+    df_tanques = datos_maestros.get("tanques_estaciones", pd.DataFrame())
+    df_inventarios = datos_maestros.get("inventarios", pd.DataFrame())
+    
+    # 3. Filtrar estaciones asignadas al usuario actual
+    if not df_usr.empty and "usuario" in df_usr.columns:
+        estaciones_usuario = df_usr[df_usr["usuario"] == usuario_actual]
+    else:
+        estaciones_usuario = pd.DataFrame()
         
-        res_est = supabase_client.table("estaciones").select("id_estacion, nombre, plaza").in_("id_estacion", ids).execute()
-        return pd.DataFrame(res_est.data)
-
-    df_estaciones = cargar_estaciones_usuario(usuario_actual)
-
-    if df_estaciones.empty:
-        st.warning("No tienes estaciones asignadas o registradas en el sistema.")
+    if estaciones_usuario.empty:
+        st.warning(f"No hay estaciones asignadas para el usuario: {usuario_actual}")
         return
 
-    # 3. Buscar registros existentes en la base de datos filtrando estrictamente por estaciones y fecha
-    ids_estaciones = df_estaciones["id_estacion"].tolist()
+    # 4. Construir opciones de selección de estación
+    options_estaciones = {}
+    for _, row in estaciones_usuario.iterrows():
+        id_est = row["id_estacion"]
+        est_info = row.get("estaciones", {})
+        nombre_est = est_info.get("nombre", f"Estación {id_est}") if isinstance(est_info, dict) else f"Estación {id_est}"
+        options_estaciones[f"{id_est} - {nombre_est}"] = id_est
 
-    res_inv = supabase_client.table("inventarios") \
-        .select("id_estacion, producto, volumen") \
-        .eq("fecha", str(fecha_seleccionada)) \
-        .in_("id_estacion", ids_estaciones) \
-        .execute()
+    if not options_estaciones:
+        st.error("No se pudieron cargar las estaciones para este usuario.")
+        return
 
-    df_inv = pd.DataFrame(res_inv.data)
+    selected_label = st.selectbox("Selecciona la Estación:", options=list(options_estaciones.keys()))
+    id_estacion_seleccionada = options_estaciones[selected_label]
 
-    # 4. Obtener tanques/productos disponibles por estación desde tanques_estaciones
-    res_tanques = supabase_client.table("tanques_estaciones") \
-        .select("id_estacion, producto") \
-        .in_("id_estacion", ids_estaciones) \
-        .execute()
+    # 5. Selección de fecha de registro
+    fecha_inventario = st.date_input("Fecha de Registro:", value=date.today())
 
-    tanques_por_estacion = {}
-    if res_tanques.data:
-        for item in res_tanques.data:
-            est = item["id_estacion"]
-            prod = item["producto"].lower().strip()
-            if est not in tanques_por_estacion:
-                tanques_por_estacion[est] = set()
-            tanques_por_estacion[est].add(prod)
+    st.markdown("### Captura de Volúmenes por Tanque")
+    
+    # Filtrar tanques de la estación seleccionada usando los datos del data_loader
+    tanques_estacion = df_tanques[df_tanques["id_estacion"] == id_estacion_seleccionada] if not df_tanques.empty else pd.DataFrame()
+    
+    if tanques_estacion.empty:
+        st.info("No hay tanques configurados para esta estación en los datos maestros.")
+        return
 
-    # 5. Estructurar la matriz base: Asignar None si el producto no existe en tanques_estaciones
-    df_matriz = df_estaciones.copy()
+    volumenes_capturados = {}
+    validador = ValidadorInventario()
 
-    df_pivot = pd.DataFrame()
-    if not df_inv.empty and "producto" in df_inv.columns and "volumen" in df_inv.columns:
-        df_inv["producto"] = df_inv["producto"].astype(str).str.lower().str.strip()
-        df_pivot = df_inv.pivot_table(index="id_estacion", columns="producto", values="volumen", aggfunc="first")
+    # Renderizar inputs para cada producto/tanque
+    for _, tanque in tanques_estacion.iterrows():
+        producto = tanque["producto"]
+        limite_max = tanque.get("limite_max", 10000)
+        limite_min = tanque.get("limite_min", 5000)
+        
+        volumen = st.number_input(
+            f"Volumen para {producto} (Límites: Mín {limite_min:,} - Máx {limite_max:,})",
+            min_value=0.0,
+            max_value=float(limite_max) * 1.5,
+            step=100.0,
+            key=f"vol_{id_estacion_seleccionada}_{producto}"
+        )
+        volumenes_capturados[producto] = volumen
 
-    for prod in ["regular", "premium", "diesel"]:
-        valores_columna = []
-        for _, row in df_estaciones.iterrows():
-            est_id = row["id_estacion"]
-            productos_permitidos = tanques_por_estacion.get(est_id, set())
-            
-            if prod not in productos_permitidos:
-                # Producto NO disponible en esta estación -> Mostrar vacío (None)
-                valores_columna.append(None)
-            else:
-                # Producto disponible -> Mapear valor existente o poner 0 inicial
-                if not df_pivot.empty and est_id in df_pivot.index and prod in df_pivot.columns:
-                    val = df_pivot.loc[est_id, prod]
-                    valores_columna.append(int(val) if pd.notna(val) else 0)
-                else:
-                    valores_columna.append(0)
-                    
-        df_matriz[prod] = valores_columna
-
-    # 6. Tabla interactiva (con altura ajustada a 600px)
-    df_editado = st.data_editor(
-        df_matriz,
-        height=600,
-        column_config={
-            "id_estacion": st.column_config.TextColumn("ID Estación", disabled=True),
-            "nombre": st.column_config.TextColumn("Nombre", disabled=True),
-            "plaza": st.column_config.TextColumn("Plaza", disabled=True),
-            "regular": st.column_config.NumberColumn("Regular", min_value=0, step=1, format="%,d"),
-            "premium": st.column_config.NumberColumn("Premium", min_value=0, step=1, format="%,d"),
-            "diesel": st.column_config.NumberColumn("Diesel", min_value=0, step=1, format="%,d"),
-        },
-        hide_index=True,
-        key=f"editor_inventarios_{usuario_actual}_{fecha_seleccionada}"
-    )
-
-    # 7. Guardado eficiente procesado a través de validacion.py
-    if st.button("Guardar Cambios de Inventario", type="primary"):
-        validador = ValidadorInventario(supabase_client)
-        valido, mensaje, registros = validador.validar_y_normalizar(df_editado, usuario_actual)
-
+    st.markdown("---")
+    
+    # 6. Botón de guardado y validación
+    if st.button("Guardar Inventarios", type="primary"):
+        # Validar con la clase ValidadorInventario usando el inventario maestro en caché
+        valido, mensaje = validador.validar(
+            id_estacion_seleccionada, 
+            fecha_inventario, 
+            volumenes_capturados, 
+            df_tanques, 
+            df_inventarios
+        )
+        
         if not valido:
-            st.error(mensaje)
+            st.error(f"Error de validación: {mensaje}")
         else:
-            exito = True
-            for reg in registros:
-                reg["fecha"] = str(fecha_seleccionada)
-                res = supabase_client.table("inventarios").upsert(
-                    reg, 
-                    on_conflict="id_estacion,fecha,producto"
-                ).execute()
-                if hasattr(res, 'error') and res.error:
-                    exito = False
-                    st.error(f"Error al guardar estación {reg['id_estacion']}: {res.error}")
-                    break
+            try:
+                registros_a_guardar = []
+                for producto, volumen in volumenes_capturados.items():
+                    registros_a_guardar.append({
+                        "id_estacion": id_estacion_seleccionada,
+                        "fecha": str(fecha_inventario),
+                        "producto": producto,
+                        "volumen": volumen
+                    })
+                
+                # Insertar en Supabase
+                res = supabase_client.table("inventarios").insert(registros_a_guardar).execute()
+                exito = True if res.data else False
+            except Exception as e:
+                st.error(f"Error al guardar en Supabase: {e}")
+                exito = False
 
             if exito:
+                # 7. Invalidar la caché del data_loader de forma quirúrgica para refrescar inventarios
+                data_loader.invalidar_inventarios()
+                
                 st.success("¡Inventarios guardados y validados correctamente en Supabase!")
                 st.rerun()
